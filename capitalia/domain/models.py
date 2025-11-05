@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
+
+from .user_states import resolve_state_for
 
 
 Plan = str  # 'basic' | 'trial' | 'premium'
@@ -28,12 +30,6 @@ class User:
         - premium-> respeita status persistido (active/suspended)
         Retorna o status efetivo (pode ser igual ao atual). Não persiste.
         """
-        if self.plan == 'basic':
-            return 'active'
-        if self.plan == 'trial':
-            if self.start_date + timedelta(days=30) <= today:
-                return 'expired'
-            return 'active'
-        # premium: mantém status (active ou suspended)
-        return self.status
+        state = resolve_state_for(self)
+        return state.evaluate(self, today)
 
