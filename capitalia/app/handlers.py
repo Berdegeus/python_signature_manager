@@ -194,10 +194,15 @@ class HeadHandler(AbstractHandler):
         if ctx.request.method != "HEAD":
             return self._handle_next(ctx)
         if ctx.route is None:
-            ctx.response = not_found()
-        else:
-            ctx.response = make_empty_response(HTTPStatus.OK)
-        return ctx.response
+            return self._handle_next(ctx)
+
+        original_method = ctx.request.method
+        ctx.request.method = "GET"
+        try:
+            response = self._handle_next(ctx)
+        finally:
+            ctx.request.method = original_method
+        return response
 
 
 class DispatchHandler(AbstractHandler):
