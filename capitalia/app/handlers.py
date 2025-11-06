@@ -7,10 +7,11 @@ import time
 from http import HTTPStatus
 from typing import Any, Callable, Dict, Iterable, Optional
 
-from ..adapters.jwt_auth import sign as jwt_sign, verify as jwt_verify
+from ..adapters.jwt_auth import sign as jwt_sign
 from ..domain.errors import NotFoundError, ValidationError
 from ..domain.services import SubscriptionService
 from ..ports.clock import RealClock
+from .auth_strategies import AuthStrategy, JwtAuthStrategy
 from .http import Handler, HttpRequest, HttpResponse, RequestContext, Route
 
 
@@ -163,9 +164,9 @@ class RoutingHandler(AbstractHandler):
 
 
 class AuthHandler(AbstractHandler):
-    def __init__(self, jwt_secret: str) -> None:
+    def __init__(self, strategy: AuthStrategy) -> None:
         super().__init__()
-        self._jwt_secret = jwt_secret
+        self._strategy = strategy
 
     def handle(self, ctx: RequestContext) -> HttpResponse:  # noqa: D401
         route = ctx.route
@@ -177,7 +178,7 @@ class AuthHandler(AbstractHandler):
             return ctx.response
         token = auth_header.split(" ", 1)[1].strip()
         try:
-            ctx.claims = jwt_verify(token, self._jwt_secret)
+            ctx.claims = self._strategy.authenticate(token)
         except Exception as exc:  # noqa: BLE001
             ctx.response = unauthorized(str(exc))
             return ctx.response
@@ -365,7 +366,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
     error_handler = ErrorHandler()
     options_handler = OptionsHandler(routes)
     routing_handler = RoutingHandler(routes)
-    auth_handler = AuthHandler(jwt_secret)
+    auth_handler = AuthHandler(JwtAuthStrategy(jwt_secret))
     head_handler = HeadHandler()
     dispatch_handler = DispatchHandler()
 
