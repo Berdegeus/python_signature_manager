@@ -194,10 +194,15 @@ class HeadHandler(AbstractHandler):
         if ctx.request.method != "HEAD":
             return self._handle_next(ctx)
         if ctx.route is None:
-            ctx.response = not_found()
-        else:
-            ctx.response = make_empty_response(HTTPStatus.OK)
-        return ctx.response
+            return self._handle_next(ctx)
+
+        original_method = ctx.request.method
+        ctx.request.method = "GET"
+        try:
+            response = self._handle_next(ctx)
+        finally:
+            ctx.request.method = original_method
+        return response
 
 
 class DispatchHandler(AbstractHandler):
@@ -315,7 +320,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
         Route("health", re.compile(r"^/health$"), {"GET"}, handle_health, requires_auth=False),
         Route(
             "get_status",
-            re.compile(r"^/user/(?P<uid>\\d+)/status$"),
+            re.compile(r"^/user/(?P<uid>\d+)/status$"),
             {"GET"},
             handle_get_status,
             requires_auth=True,
@@ -324,7 +329,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
         Route("login", re.compile(r"^/login$"), {"POST"}, handle_login, requires_auth=False),
         Route(
             "upgrade",
-            re.compile(r"^/user/(?P<uid>\\d+)/upgrade$"),
+            re.compile(r"^/user/(?P<uid>\d+)/upgrade$"),
             {"POST"},
             handle_upgrade,
             requires_auth=True,
@@ -332,7 +337,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
         ),
         Route(
             "downgrade",
-            re.compile(r"^/user/(?P<uid>\\d+)/downgrade$"),
+            re.compile(r"^/user/(?P<uid>\d+)/downgrade$"),
             {"POST"},
             handle_downgrade,
             requires_auth=True,
@@ -340,7 +345,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
         ),
         Route(
             "suspend",
-            re.compile(r"^/user/(?P<uid>\\d+)/suspend$"),
+            re.compile(r"^/user/(?P<uid>\d+)/suspend$"),
             {"POST"},
             handle_suspend,
             requires_auth=True,
@@ -348,7 +353,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
         ),
         Route(
             "reactivate",
-            re.compile(r"^/user/(?P<uid>\\d+)/reactivate$"),
+            re.compile(r"^/user/(?P<uid>\d+)/reactivate$"),
             {"POST"},
             handle_reactivate,
             requires_auth=True,
