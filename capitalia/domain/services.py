@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import Optional
-
 from ..domain.models import User
-from ..domain.errors import NotFoundError, ValidationError
+from ..domain.user_states import get_user_state
+from ..domain.errors import NotFoundError
 from ..ports.unit_of_work import UnitOfWork
 from ..ports.clock import Clock
 
@@ -26,7 +24,8 @@ class SubscriptionService:
         today = self._clock.today()
         with self._uow_factory() as uow:
             user = self._get_user(uow, user_id)
-            effective = user.evaluate_status(today)
+            state = get_user_state(user.status)
+            effective = state.evaluate(user, today)
             if effective != user.status:
                 user.status = effective
                 uow.users.save(user)
@@ -36,10 +35,8 @@ class SubscriptionService:
     def upgrade(self, user_id: int) -> dict:
         with self._uow_factory() as uow:
             user = self._get_user(uow, user_id)
-            if user.plan not in ("basic", "trial"):
-                raise ValidationError("only basic|trial can upgrade to premium")
-            user.plan = "premium"
-            user.status = "active"
+            state = get_user_state(user.status)
+            state.upgrade(user)
             uow.users.save(user)
             uow.commit()
             return {"user_id": user.id, "plan": user.plan, "status": user.status}
@@ -47,10 +44,8 @@ class SubscriptionService:
     def downgrade(self, user_id: int) -> dict:
         with self._uow_factory() as uow:
             user = self._get_user(uow, user_id)
-            if user.plan != "premium":
-                raise ValidationError("only premium can downgrade to basic")
-            user.plan = "basic"
-            user.status = "active"
+            state = get_user_state(user.status)
+            state.downgrade(user)
             uow.users.save(user)
             uow.commit()
             return {"user_id": user.id, "plan": user.plan, "status": user.status}
@@ -58,9 +53,8 @@ class SubscriptionService:
     def suspend(self, user_id: int) -> dict:
         with self._uow_factory() as uow:
             user = self._get_user(uow, user_id)
-            if user.plan != "premium":
-                raise ValidationError("only premium can be suspended")
-            user.status = "suspended"
+            state = get_user_state(user.status)
+            state.suspend(user)
             uow.users.save(user)
             uow.commit()
             return {"user_id": user.id, "plan": user.plan, "status": user.status}
@@ -68,9 +62,8 @@ class SubscriptionService:
     def reactivate(self, user_id: int) -> dict:
         with self._uow_factory() as uow:
             user = self._get_user(uow, user_id)
-            if user.plan != "premium" or user.status != "suspended":
-                raise ValidationError("only suspended premium can reactivate")
-            user.status = "active"
+            state = get_user_state(user.status)
+            state.reactivate(user)
             uow.users.save(user)
             uow.commit()
             return {"user_id": user.id, "plan": user.plan, "status": user.status}
