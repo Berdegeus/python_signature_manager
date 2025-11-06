@@ -1,0 +1,10 @@
+bin/
+obj/
+app.db-*
+*.user
+*.swp
+*.suo
+*.userprefs
+*.db-shm
+*.db-wal
+/.vs/
