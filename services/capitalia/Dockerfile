@@ -18,14 +18,14 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copiar arquivo de dependências
-COPY requirements.txt .
+COPY requirements.txt /tmp/requirements.txt
 
-# Instalar dependências Python
+# Instalar dependências Python (apenas biblioteca padrão por padrão)
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Copiar código da aplicação
-COPY . .
+# Copiar código da aplicação para a hierarquia de serviços
+COPY . /app/services/capitalia
 
 # Criar diretório para banco de dados SQLite
 RUN mkdir -p /app/data && \
@@ -38,4 +38,4 @@ USER appuser
 EXPOSE 8080
 
 # Comando para executar a aplicação
-CMD ["python", "-m", "capitalia.main"]
+CMD ["python", "-m", "services.capitalia.main"]

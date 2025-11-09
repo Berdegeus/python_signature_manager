@@ -1,8 +1,10 @@
+"""SQL-backed unit of work implementation shared by multiple services."""
+
 from __future__ import annotations
 
 from typing import Any, Callable
 
-from ..ports.unit_of_work import UnitOfWork
+from .unit_of_work import UnitOfWork
 
 
 class SqlUnitOfWork(UnitOfWork):

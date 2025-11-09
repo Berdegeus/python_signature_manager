@@ -7,10 +7,10 @@ from typing import Any, Dict
 
 import pytest
 
-from capitalia.adapters.jwt_auth import sign
-from capitalia.app.auth_strategies import AuthStrategy, JwtAuthStrategy
-from capitalia.app.handlers import AbstractHandler, AuthHandler, forbidden
-from capitalia.app.http import HttpRequest, HttpResponse, RequestContext, Route
+from libs.python.http_core import HttpRequest, HttpResponse, RequestContext, Route
+from services.capitalia.adapters.jwt_auth import sign
+from services.capitalia.app.auth_strategies import AuthStrategy, JwtAuthStrategy
+from services.capitalia.app.handlers import AbstractHandler, AuthHandler, forbidden
 
 
 class DummyHandler(AbstractHandler):

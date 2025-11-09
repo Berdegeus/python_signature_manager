@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import hashlib
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -9,11 +11,11 @@ from typing import Callable
 
 import pytest
 
-from capitalia.adapters.sqlite_repo import SqliteUserRepository
-from capitalia.adapters.uow import SqlUnitOfWork
-from capitalia.adapters.jwt_auth import verify as jwt_verify
-from capitalia.app.handlers import build_handler
-from capitalia.app.http import HttpRequest
+from libs.python.data_access import SqlUnitOfWork
+from libs.python.http_core import HttpRequest
+from services.capitalia.adapters.jwt_auth import verify as jwt_verify
+from services.capitalia.adapters.sqlite_repo import SqliteUserRepository
+from services.capitalia.app.handlers import build_handler
 
 
 @dataclass

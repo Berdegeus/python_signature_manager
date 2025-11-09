@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from libs.python.data_access import UnitOfWork
 from ..domain.models import User
 from ..domain.user_states import get_user_state
 from ..domain.errors import NotFoundError
-from ..ports.unit_of_work import UnitOfWork
 from ..ports.clock import Clock
 
 

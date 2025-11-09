@@ -2,6 +2,8 @@
 
 Este projeto implementa um microsserviço único para gestão de assinaturas (streaming) com HTTP puro (sem frameworks web), JWT manual, Ports & Adapters, Repository + Data Mapper, Unit of Work, Strategy para alternar entre SQLite/MySQL e sem ORMs.
 
+> **Estrutura atualizada:** o código do serviço Python vive em `services/capitalia` e os utilitários compartilhados em `libs/python/*`. Outros serviços (router, purchase_requests, auth) também ficam em `services/`.
+
 ## Requisitos
 
 - Python 3.10+
@@ -14,27 +16,29 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
    ```bash
    python -m venv .venv
    source .venv/bin/activate
-   pip install -r capitalia/requirements.txt
+   pip install -r services/capitalia/requirements.txt
+   # Para habilitar MySQL instale o driver manualmente:
+   # pip install PyMySQL
    ```
 
 2. Inicialize e faça seed do SQLite:
 
    ```bash
-   python -m capitalia.scripts.init_sqlite
-   python -m capitalia.scripts.seed_sqlite
+   python -m services.capitalia.scripts.init_sqlite
+   python -m services.capitalia.scripts.seed_sqlite
    ```
 
 3. Execute o servidor (porta padrão 8080):
 
    ```bash
-   python -m capitalia.main
+   python -m services.capitalia.main
    ```
 
 4. Faça login e chame rotas protegidas (exemplos abaixo).
 
 ## Alternar para MySQL
 
-1. Configure variáveis de ambiente (veja `capitalia/.env.example`):
+1. Configure variáveis de ambiente (veja `services/capitalia/.env.example`):
 
    ```bash
    export DB_KIND=mysql
@@ -49,10 +53,11 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
 2. Instale dependências (PyMySQL já está em `requirements.txt`), aplique DDL e seed:
 
    ```bash
-   pip install -r capitalia/requirements.txt
+   pip install -r services/capitalia/requirements.txt
+   # Se necessário, instale também `PyMySQL` manualmente.
    # Execute os .sql no seu MySQL:
-   # capitalia/scripts/init_mysql.sql e capitalia/scripts/seed_mysql.sql
-   python -m capitalia.main
+   # services/capitalia/scripts/init_mysql.sql e services/capitalia/scripts/seed_mysql.sql
+   python -m services.capitalia.main
    ```
 
 ## Endpoints HTTP
@@ -103,7 +108,7 @@ curl -s -X POST http://localhost:8080/user/1/reactivate -H "Authorization: Beare
 
 ## Configuração (env vars)
 
-Veja `capitalia/.env.example`.
+Veja `services/capitalia/.env.example`.
 
 ## Diagrama (ASCII) — Ports & Adapters
 
@@ -249,7 +254,7 @@ FLUSH PRIVILEGES;
 
 4) Aplicar DDL e seed
 
-- Rode `capitalia/scripts/init_mysql.sql` e `capitalia/scripts/seed_mysql.sql` no DB `capitalia`.
+- Rode `services/capitalia/scripts/init_mysql.sql` e `services/capitalia/scripts/seed_mysql.sql` no DB `capitalia`.
 
 5) Configurar o microsserviço
 
@@ -260,8 +265,8 @@ export MYSQL_USER=capitalia_user
 export MYSQL_PASSWORD=<senha>
 export MYSQL_DB=capitalia
 export JWT_SECRET=<segredo forte>
-pip install -r capitalia/requirements.txt
-python capitalia/main.py
+pip install -r services/capitalia/requirements.txt
+python -m services.capitalia.main
 ```
 
 ## Testes

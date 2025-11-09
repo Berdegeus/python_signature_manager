@@ -1,0 +1,1 @@
+# Router service relies exclusively on the Python standard library.

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-from capitalia.app.handlers import AbstractHandler, HeadHandler
-from capitalia.app.http import HttpRequest, HttpResponse, RequestContext, Route
+from libs.python.http_core import HttpRequest, HttpResponse, RequestContext, Route
+from services.capitalia.app.handlers import AbstractHandler, HeadHandler
 
 
 class DummyHandler(AbstractHandler):

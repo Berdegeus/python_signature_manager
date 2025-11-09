@@ -3,9 +3,9 @@ from __future__ import annotations
 import unittest
 from datetime import date, timedelta
 
-from capitalia.domain.models import User
-from capitalia.domain.services import SubscriptionService
-from capitalia.ports.clock import Clock
+from services.capitalia.domain.models import User
+from services.capitalia.domain.services import SubscriptionService
+from services.capitalia.ports.clock import Clock
 
 
 class FakeClock(Clock):
