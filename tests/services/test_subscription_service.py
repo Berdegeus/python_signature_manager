@@ -4,10 +4,10 @@ from datetime import date, timedelta
 
 import pytest
 
-from capitalia.domain.errors import ValidationError
-from capitalia.domain.models import User
-from capitalia.domain.services import SubscriptionService
-from capitalia.ports.clock import Clock
+from services.capitalia.domain.errors import ValidationError
+from services.capitalia.domain.models import User
+from services.capitalia.domain.services import SubscriptionService
+from services.capitalia.ports.clock import Clock
 
 
 class FakeClock(Clock):

@@ -4,10 +4,11 @@ Este documento explica como executar o projeto Python Signature Manager usando D
 
 ## Arquivos Docker
 
-- `Dockerfile`: Define a imagem Docker da aplicação
-- `docker-compose.yml`: Configuração para execução com Docker Compose
+- `services/capitalia/Dockerfile`: Define a imagem do serviço Python "Capitalia"
+- `services/router/Dockerfile`: Imagem do proxy HTTP
+- `services/purchase_requests/Dockerfile`: Imagem do serviço .NET de solicitações de compra
+- `docker-compose.yml`: Orquestra os serviços e volumes compartilhados
 - `.dockerignore`: Arquivos ignorados durante o build
-- `.env.example`: Exemplo de configuração de variáveis de ambiente
 
 ## Como usar
 
@@ -17,50 +18,53 @@ Este documento explica como executar o projeto Python Signature Manager usando D
 # 1. Clone o repositório e navegue até o diretório
 cd python_signature_manager
 
-# 2. Copie e configure as variáveis de ambiente
-cp .env.example .env
-# Edite o arquivo .env com suas configurações
+# 2. (Opcional) Ajuste variáveis de ambiente em um arquivo `.env`
+#    As variáveis padrão atendem ao desenvolvimento local.
 
-# 3. Execute a aplicação
-docker-compose up -d
+# 3. Construa e suba os serviços
+docker compose up -d --build
 
-# 4. Verifique os logs
-docker-compose logs -f
+# 4. Verifique os logs consolidados
+docker compose logs -f
 
 # 5. Para parar a aplicação
-docker-compose down
+docker compose down
 ```
 
 ### 2. Usando Docker diretamente
 
 ```bash
-# 1. Construir a imagem
-docker build -t python-signature-manager .
+# 1. Construir a imagem do serviço Capitalia
+docker build -t capitalia-service -f services/capitalia/Dockerfile services/capitalia
 
 # 2. Criar diretório para dados
 mkdir -p data
 
 # 3. Executar o container
 docker run -d \
-  --name signature-manager \
+  --name capitalia-service \
   -p 8080:8080 \
   -e DB_KIND=sqlite \
   -e SQLITE_PATH=/app/data/capitalia.db \
   -e JWT_SECRET=your-secret-here \
   -v $(pwd)/data:/app/data \
-  python-signature-manager
+  -v $(pwd)/services/capitalia:/app/services/capitalia \
+  -v $(pwd)/libs/python:/app/libs/python:ro \
+  capitalia-service
 
 # 4. Verificar logs
-docker logs signature-manager
+docker logs capitalia-service
 
 # 5. Parar o container
-docker stop signature-manager
-docker rm signature-manager
+docker stop capitalia-service
+docker rm capitalia-service
 ```
 
 ## Configurações
 
 ### Variáveis de Ambiente
+
+**Capitalia**
 
 - `DB_KIND`: Tipo de banco (`sqlite` ou `mysql`)
 - `SQLITE_PATH`: Caminho para o banco SQLite (se usar SQLite)
@@ -70,7 +74,18 @@ docker rm signature-manager
 - `MYSQL_DB`: Nome do banco MySQL
 - `MYSQL_PORT`: Porta do MySQL
 - `JWT_SECRET`: Chave secreta para JWT
-- `PORT`: Porta da aplicação (padrão: 8080)
+- `PORT`: Porta exposta pelo serviço (padrão: 8080)
+
+**Router**
+
+- `BACKEND_HOST`: Host/IP do serviço de backend
+- `BACKEND_PORT`: Porta exposta pelo backend
+- `ROUTER_PORT`: Porta de escuta do proxy (padrão: 80)
+
+**Purchase Requests**
+
+- `ConnectionStrings__DefaultConnection`: String de conexão do EF Core
+- `Consul__Address`: Endpoint do agente Consul (opcional)
 
 ### Usando MySQL
 
@@ -78,12 +93,15 @@ Para usar MySQL, descomente as seções correspondentes no `docker-compose.yml` 
 
 ## Portas
 
-- A aplicação é exposta na porta `8080`
-- O MySQL (se habilitado) é exposto na porta `3306`
+- Capitalia: `8080`
+- Router: `80`
+- Purchase Requests: `5000`
+- Consul (opcional): `8500`
 
 ## Volumes
 
-- `./data:/app/data`: Armazena o banco de dados SQLite
+- `capitalia_data`: Persistência do SQLite do Capitalia (`/app/data`)
+- `purchase_requests_data`: Persistência opcional do banco do serviço de compras (`/app/data`)
 
 ## Health Check
 
@@ -98,12 +116,12 @@ O container inclui um health check que verifica se a aplicação está responden
 ## Troubleshooting
 
 ```bash
-# Ver logs detalhados
-docker-compose logs -f app
+# Ver logs detalhados de um serviço específico
+docker compose logs -f capitalia
 
 # Executar comandos dentro do container
-docker-compose exec app bash
+docker compose exec capitalia bash
 
-# Reconstruir a imagem
-docker-compose build --no-cache
+# Reconstruir a imagem de um serviço
+docker compose build --no-cache capitalia
 ```

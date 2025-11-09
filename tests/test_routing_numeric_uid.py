@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import json
 from dataclasses import dataclass
 from datetime import date
 
-from capitalia.adapters.jwt_auth import sign as jwt_sign
-from capitalia.app.handlers import build_handler
-from capitalia.app.http import HttpRequest
-from capitalia.domain.models import User
+from libs.python.http_core import HttpRequest
+from services.capitalia.adapters.jwt_auth import sign as jwt_sign
+from services.capitalia.app.handlers import build_handler
+from services.capitalia.domain.models import User
 
 
 @dataclass

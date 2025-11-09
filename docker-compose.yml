@@ -1,83 +1,80 @@
+version: "3.9"
+
+x-shared-env: &shared-env
+  JWT_SECRET: ${JWT_SECRET:-local-dev-secret}
+  SQLITE_PATH: /app/data/capitalia.db
+
 services:
-  app:
-    build: .
+  capitalia:
+    build:
+      context: ./services/capitalia
+      dockerfile: Dockerfile
     environment:
-      - DB_KIND=sqlite
-      - SQLITE_PATH=/app/data/capitalia.db
-      - JWT_SECRET=your-jwt-secret-here
-      - PORT=8080
+      <<: *shared-env
+      DB_KIND: ${DB_KIND:-sqlite}
+      PORT: 8080
     volumes:
-      - ./data:/app/data
+      - capitalia_data:/app/data
+      - ./services/capitalia:/app/services/capitalia
+      - ./libs/python:/app/libs/python
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/login').read()"]
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     networks:
-      - app-network
+      - backend
 
   router:
     build:
-      context: ./router
+      context: ./services/router
       dockerfile: Dockerfile
+    environment:
+      BACKEND_HOST: capitalia
+      BACKEND_PORT: 8080
+      ROUTER_PORT: 80
+    depends_on:
+      - capitalia
     ports:
       - "80:80"
-    environment:
-      - BACKEND_HOST=app
-      - BACKEND_PORT=8080
-      - ROUTER_PORT=80
-    depends_on:
-      - app
+    volumes:
+      - ./services/router:/app/services/router
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:80/login').read()"]
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:80/health').read()"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
     networks:
-      - app-network
+      - edge
+      - backend
 
-  # Configuração opcional para MySQL (descomente se necessário)
-  # mysql:
-  #   image: mysql:8.0
-  #   environment:
-  #     MYSQL_ROOT_PASSWORD: rootpassword
-  #     MYSQL_DATABASE: capitalia
-  #     MYSQL_USER: capitalia_user
-  #     MYSQL_PASSWORD: changeme
-  #   ports:
-  #     - "3306:3306"
-  #   volumes:
-  #     - mysql_data:/var/lib/mysql
-  #   restart: unless-stopped
-  #   networks:
-  #     - app-network
-  
-  # app-mysql:
-  #   build: .
-  #   ports:
-  #     - "8081:8080"
-  #   environment:
-  #     - DB_KIND=mysql
-  #     - MYSQL_HOST=mysql
-  #     - MYSQL_USER=capitalia_user
-  #     - MYSQL_PASSWORD=changeme
-  #     - MYSQL_DB=capitalia
-  #     - MYSQL_PORT=3306
-  #     - JWT_SECRET=your-jwt-secret-here
-  #     - PORT=8080
-  #   depends_on:
-  #     - mysql
-  #   restart: unless-stopped
-  #   networks:
-  #     - app-network
+  purchase_requests:
+    build:
+      context: ./services/purchase_requests
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Data Source=/app/data/purchase_requests.db"
+      Consul__Address: ${CONSUL_ADDRESS:-http://consul:8500}
+    ports:
+      - "5000:5000"
+    volumes:
+      - purchase_requests_data:/app/data
+      - ./services/purchase_requests/appsettings.json:/app/appsettings.json:ro
+    restart: unless-stopped
+    networks:
+      - backend
 
 networks:
-  app-network:
-    driver: bridge
+  backend:
+  edge:
 
-# volumes:
-#   mysql_data:
+volumes:
+  capitalia_data:
+  purchase_requests_data:

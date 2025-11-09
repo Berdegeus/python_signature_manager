@@ -1,0 +1,2 @@
+# The Capitalia service is designed to run with only the Python standard library.
+# Optional database drivers (e.g. PyMySQL) can be installed manually when needed.

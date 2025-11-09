@@ -53,17 +53,25 @@ class Config:
 
             return factory
         else:
-            import pymysql
+            import importlib
+            import importlib.util
+
+            if importlib.util.find_spec("pymysql") is None:
+                raise RuntimeError(
+                    "PyMySQL is required for MySQL support. Install it manually to enable DB_KIND=mysql."
+                )
+
+            module = importlib.import_module("pymysql")
 
             def factory() -> Any:
-                return pymysql.connect(
+                return module.connect(
                     host=self.mysql['host'],
                     user=self.mysql['user'],
                     password=self.mysql['password'],
                     database=self.mysql['db'],
                     port=self.mysql['port'],
                     charset=self.mysql['charset'],
-                    cursorclass=pymysql.cursors.DictCursor,
+                    cursorclass=module.cursors.DictCursor,
                     autocommit=False,
                 )
 

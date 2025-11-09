@@ -2,6 +2,8 @@
 
 Este projeto implementa um microsserviço único para gestão de assinaturas (streaming) com HTTP puro (sem frameworks web), JWT manual, Ports & Adapters, Repository + Data Mapper, Unit of Work, Strategy para alternar entre SQLite/MySQL e sem ORMs.
 
+> **Estrutura atualizada:** o código do serviço Python vive em `services/capitalia` e os utilitários compartilhados em `libs/python/*`. Outros serviços (router, purchase_requests, auth) também ficam em `services/`.
+
 ## Requisitos
 
 - Python 3.10+
@@ -9,32 +11,45 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
 
 ## Setup rápido (SQLite)
 
-1. Crie e ative um virtualenv e instale dependências:
+1. Gere o ambiente virtual com o helper multiplataforma e ative-o:
 
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r capitalia/requirements.txt
+   # A partir da raiz do repositório
+   python scripts/bootstrap_service_env.py capitalia
+   cd services/capitalia
    ```
+
+   O script cria (ou reaproveita) `.venv/`, atualiza `pip`/`setuptools` e instala `services.capitalia` em modo *editable* com o
+   `PYTHONPATH` apontando para a raiz do repositório.
+
+   Para ativar o ambiente:
+
+   - **macOS/Linux**: `source .venv/bin/activate`
+   - **Windows PowerShell**: `.venv\Scripts\Activate.ps1`
+   - **Windows Command Prompt (cmd.exe)**: `.venv\Scripts\activate.bat`
+   - **Git Bash no Windows**: `source .venv/Scripts/activate`
+
+   > Se precisar recriar o ambiente do zero (por exemplo, após um erro `Unable to copy ... venvlauncher.exe`), execute
+   > `python scripts/bootstrap_service_env.py capitalia --force` para limpar e gerar novamente.
 
 2. Inicialize e faça seed do SQLite:
 
    ```bash
-   python -m capitalia.scripts.init_sqlite
-   python -m capitalia.scripts.seed_sqlite
+   python -m services.capitalia.scripts.init_sqlite
+   python -m services.capitalia.scripts.seed_sqlite
    ```
 
 3. Execute o servidor (porta padrão 8080):
 
    ```bash
-   python -m capitalia.main
+   python -m services.capitalia.main
    ```
 
 4. Faça login e chame rotas protegidas (exemplos abaixo).
 
 ## Alternar para MySQL
 
-1. Configure variáveis de ambiente (veja `capitalia/.env.example`):
+1. Configure variáveis de ambiente (veja `services/capitalia/.env.example`):
 
    ```bash
    export DB_KIND=mysql
@@ -46,13 +61,15 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
    export PORT=8080
    ```
 
-2. Instale dependências (PyMySQL já está em `requirements.txt`), aplique DDL e seed:
+2. Com o virtualenv ativo em `services/capitalia`, instale o pacote (caso ainda não tenha feito), adicione o driver MySQL e aplique DDL/seed:
 
    ```bash
-   pip install -r capitalia/requirements.txt
+   pip install -e .
+   # Instale o driver MySQL apenas se for usar MySQL:
+   # pip install PyMySQL
    # Execute os .sql no seu MySQL:
-   # capitalia/scripts/init_mysql.sql e capitalia/scripts/seed_mysql.sql
-   python -m capitalia.main
+   # services/capitalia/scripts/init_mysql.sql e services/capitalia/scripts/seed_mysql.sql
+   python -m services.capitalia.main
    ```
 
 ## Endpoints HTTP
@@ -103,7 +120,7 @@ curl -s -X POST http://localhost:8080/user/1/reactivate -H "Authorization: Beare
 
 ## Configuração (env vars)
 
-Veja `capitalia/.env.example`.
+Veja `services/capitalia/.env.example`.
 
 ## Diagrama (ASCII) — Ports & Adapters
 
@@ -249,7 +266,7 @@ FLUSH PRIVILEGES;
 
 4) Aplicar DDL e seed
 
-- Rode `capitalia/scripts/init_mysql.sql` e `capitalia/scripts/seed_mysql.sql` no DB `capitalia`.
+- Rode `services/capitalia/scripts/init_mysql.sql` e `services/capitalia/scripts/seed_mysql.sql` no DB `capitalia`.
 
 5) Configurar o microsserviço
 
@@ -260,8 +277,9 @@ export MYSQL_USER=capitalia_user
 export MYSQL_PASSWORD=<senha>
 export MYSQL_DB=capitalia
 export JWT_SECRET=<segredo forte>
-pip install -r capitalia/requirements.txt
-python capitalia/main.py
+pip install -e services/capitalia
+# pip install PyMySQL  # se MySQL estiver habilitado
+python -m services.capitalia.main
 ```
 
 ## Testes

@@ -1,0 +1,10 @@
+[project]
+name = "auth-service"
+version = "0.1.0"
+description = "Placeholder for future authentication service"
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from libs.python.data_access import SqlUnitOfWork
+from libs.python.http_core import run_server
 from .config import Config
-from .adapters.uow import SqlUnitOfWork
-from .app.server import run_server
 from .app.handlers import build_handler
 from .ports.clock import RealClock
 

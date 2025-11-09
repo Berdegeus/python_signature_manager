@@ -1,1 +1,2 @@
-PyMySQL>=1.1.0
+# Dependencies are declared per service under services/<name>/requirements.txt.
+# This placeholder is kept for compatibility with tooling expecting a root file.
