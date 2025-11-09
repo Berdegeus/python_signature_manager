@@ -11,13 +11,14 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
 
 ## Setup rápido (SQLite)
 
-1. Crie e ative um virtualenv e instale dependências:
+1. Crie e ative um virtualenv dentro de `services/capitalia` e instale o pacote em modo *editable* para que o namespace `services.*` e a pasta `libs/` fiquem no `PYTHONPATH` automaticamente:
 
    ```bash
+   cd services/capitalia
    python -m venv .venv
    source .venv/bin/activate
-   pip install -r services/capitalia/requirements.txt
-   # Para habilitar MySQL instale o driver manualmente:
+   pip install -e .
+   # Dependências opcionais (ex.: driver MySQL) podem ser instaladas manualmente:
    # pip install PyMySQL
    ```
 
@@ -50,11 +51,12 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
    export PORT=8080
    ```
 
-2. Instale dependências (PyMySQL já está em `requirements.txt`), aplique DDL e seed:
+2. Com o virtualenv ativo em `services/capitalia`, instale o pacote (caso ainda não tenha feito), adicione o driver MySQL e aplique DDL/seed:
 
    ```bash
-   pip install -r services/capitalia/requirements.txt
-   # Se necessário, instale também `PyMySQL` manualmente.
+   pip install -e .
+   # Instale o driver MySQL apenas se for usar MySQL:
+   # pip install PyMySQL
    # Execute os .sql no seu MySQL:
    # services/capitalia/scripts/init_mysql.sql e services/capitalia/scripts/seed_mysql.sql
    python -m services.capitalia.main
@@ -265,7 +267,8 @@ export MYSQL_USER=capitalia_user
 export MYSQL_PASSWORD=<senha>
 export MYSQL_DB=capitalia
 export JWT_SECRET=<segredo forte>
-pip install -r services/capitalia/requirements.txt
+pip install -e services/capitalia
+# pip install PyMySQL  # se MySQL estiver habilitado
 python -m services.capitalia.main
 ```
 
