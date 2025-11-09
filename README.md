@@ -11,16 +11,26 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
 
 ## Setup rápido (SQLite)
 
-1. Crie e ative um virtualenv dentro de `services/capitalia` e instale o pacote em modo *editable* para que o namespace `services.*` e a pasta `libs/` fiquem no `PYTHONPATH` automaticamente:
+1. Gere o ambiente virtual com o helper multiplataforma e ative-o:
 
    ```bash
+   # A partir da raiz do repositório
+   python scripts/bootstrap_service_env.py capitalia
    cd services/capitalia
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -e .
-   # Dependências opcionais (ex.: driver MySQL) podem ser instaladas manualmente:
-   # pip install PyMySQL
    ```
+
+   O script cria (ou reaproveita) `.venv/`, atualiza `pip`/`setuptools` e instala `services.capitalia` em modo *editable* com o
+   `PYTHONPATH` apontando para a raiz do repositório.
+
+   Para ativar o ambiente:
+
+   - **macOS/Linux**: `source .venv/bin/activate`
+   - **Windows PowerShell**: `.venv\Scripts\Activate.ps1`
+   - **Windows Command Prompt (cmd.exe)**: `.venv\Scripts\activate.bat`
+   - **Git Bash no Windows**: `source .venv/Scripts/activate`
+
+   > Se precisar recriar o ambiente do zero (por exemplo, após um erro `Unable to copy ... venvlauncher.exe`), execute
+   > `python scripts/bootstrap_service_env.py capitalia --force` para limpar e gerar novamente.
 
 2. Inicialize e faça seed do SQLite:
 

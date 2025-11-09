@@ -13,4 +13,4 @@ build-backend = "setuptools.build_meta"
 package-dir = {"" = "../.."}
 
 [tool.setuptools.packages.find]
-include = ["services", "services.capitalia*"]
+include = ["services", "services.capitalia*", "libs", "libs.python*"]
