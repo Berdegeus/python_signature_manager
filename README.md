@@ -24,7 +24,7 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
    python -m capitalia.scripts.seed_sqlite
    ```
 
-3. Execute o servidor (porta padrão 8080):
+3. Execute o servidor (porta padrão 8000, com fallback automático até 8100):
 
    ```bash
    python -m capitalia.main
@@ -43,7 +43,7 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
    export MYSQL_PASSWORD=senha
    export MYSQL_DB=capitalia
    export JWT_SECRET=troque-por-uma-chave-forte
-   export PORT=8080
+   export PORT=8000-8100
    ```
 
 2. Instale dependências (PyMySQL já está em `requirements.txt`), aplique DDL e seed:
@@ -72,38 +72,76 @@ Erros: `401` (token ausente/inválido), `404`, `422` (payload/estado inválido),
 ### Exemplos curl
 
 ```bash
+# Use BASE=http://localhost quando estiver passando pelo router (porta 80).
+# Para falar direto com uma instância específica, consulte o log para saber a porta (ex.: http://localhost:8000).
+BASE=${BASE:-http://localhost}
+
 # Login (usuário seed)
-curl -s -X POST http://localhost:8080/login \
+curl -s -X POST "$BASE/login" \
   -H 'Content-Type: application/json' \
   -d '{"email":"alice@example.com","password":"password123"}'
 
 # Guarde o token
-TOKEN="$(curl -s -X POST http://localhost:8080/login \
+TOKEN="$(curl -s -X POST "$BASE/login" \
   -H 'Content-Type: application/json' \
   -d '{"email":"alice@example.com","password":"password123"}' | jq -r .token)"
 
 # Status efetivo (aplica expiração do trial)
-curl -s http://localhost:8080/user/1/status -H "Authorization: Bearer $TOKEN"
+curl -s "$BASE/user/1/status" -H "Authorization: Bearer $TOKEN"
 
 # Healthcheck
-curl -s http://localhost:8080/health
+curl -s "$BASE/health"
 
 # Upgrade
-curl -s -X POST http://localhost:8080/user/1/upgrade -H "Authorization: Bearer $TOKEN"
+curl -s -X POST "$BASE/user/1/upgrade" -H "Authorization: Bearer $TOKEN"
 
 # Downgrade
-curl -s -X POST http://localhost:8080/user/1/downgrade -H "Authorization: Bearer $TOKEN"
+curl -s -X POST "$BASE/user/1/downgrade" -H "Authorization: Bearer $TOKEN"
 
 # Suspender (premium)
-curl -s -X POST http://localhost:8080/user/1/suspend -H "Authorization: Bearer $TOKEN"
+curl -s -X POST "$BASE/user/1/suspend" -H "Authorization: Bearer $TOKEN"
 
 # Reativar (premium suspenso)
-curl -s -X POST http://localhost:8080/user/1/reactivate -H "Authorization: Bearer $TOKEN"
+curl -s -X POST "$BASE/user/1/reactivate" -H "Authorization: Bearer $TOKEN"
 ```
 
 ## Configuração (env vars)
 
-Veja `capitalia/.env.example`.
+Veja `capitalia/.env.example`. Principais variáveis:
+
+- `HOST`: interface/IP para bind (default `0.0.0.0`).
+- `PORT`: aceita um único valor ou listas/intervalos. O padrão agora é `8000-8100`, então a primeira instância tenta `8000`, a segunda `8001`, e assim por diante.
+- `PORT_POOL`: mesmos formatos de `PORT`. Use para explicitar o range que será monitorado pelo router (por padrão `8000-8100`). Evite incluir `auto` quando houver roteador fazendo descoberta.
+- `PORT`/`PORT_POOL` ainda entendem o token `auto` (valor `0`) para permitir portas livres do SO em cenários locais fora do cluster.
+
+Para subir várias instâncias locais sem colidir, defina um pool e execute múltiplas vezes:
+
+```bash
+export PORT_POOL=8000-8100
+python -m capitalia.main  # cada processo pegará a próxima porta livre do pool
+```
+
+Sem `PORT_POOL`, cada instância tentará `PORT` e, se já houver alguém escutando, cairá para `auto` e mostrará no log a porta atribuída pelo SO.
+
+## Router e Balanceamento
+
+O diretório `router/` contém um reverse proxy/roteador simples escrito também com libs padrão. Ele descobre instâncias saudáveis (fazendo `GET /health`) dentro do range `8000-8100` e distribui as requisições em round-robin, expondo tudo na porta 80.
+
+- `BACKEND_HOST`: host ou IP onde o Capitalia está rodando (default `127.0.0.1`).
+- `BACKEND_PORTS`: lista/intervalos monitorados (default `8000-8100`). Alternativamente, use `BACKEND_PORT_POOL`; mantenha alinhado com `PORT_POOL` das instâncias.
+- `BACKEND_DISCOVERY_INTERVAL`: segundos entre varreduras (default `2`).
+- `BACKEND_TIMEOUT`: timeout da chamada ao backend (default `10`).
+- `BACKEND_HEALTH_PATH`: endpoint usado para checar saúde (default `/health`).
+- `ROUTER_PORT`: porta pública do roteador (default `80`).
+
+Exemplo local (Linux) containerizado, usando host networking para compartilhar o range 8000-8100 entre múltiplos containers e publicar o router em `http://localhost`:
+
+```bash
+docker compose up --build --scale app=4 router
+# As instâncias ocuparão portas entre 8000 e 8100 e o router servirá em http://localhost/
+```
+
+> Dica: `network_mode: host` só está disponível diretamente em hosts Linux. Em macOS/Windows, utilize WSL2/Linux para reproduzir a topologia ou execute os processos nativamente fora de containers.
 
 ## Diagrama (ASCII) — Ports & Adapters
 
@@ -138,7 +176,7 @@ Server: verifica assinatura e exp -> autoriza -> executa caso de uso
 
 ## Referência de Rotas (API)
 
-Base URL: `http://<host>:<PORT>` (default `http://localhost:8080`). Todas as respostas são JSON.
+Base URL: `http://<host>:<PORT>` (com o router padrão, `http://localhost`). Todas as respostas são JSON.
 
 ### POST /login
 - Autenticação: pública (sem token).

@@ -1,6 +1,6 @@
 import os
 import pathlib
-from typing import Callable, Any, Dict
+from typing import Callable, Any, Dict, List
 
 
 def _load_dotenv_if_present() -> None:
@@ -32,7 +32,15 @@ class Config:
             'charset': 'utf8mb4',
         }
         self.jwt_secret: str = os.environ.get('JWT_SECRET', 'change-me')
-        self.port: int = int(os.environ.get('PORT', '8080'))
+        port_pool_raw = os.environ.get('PORT_POOL')
+        raw_port = os.environ.get('PORT', '8000-8100')
+        self.port_candidates: List[int] = self._parse_port_candidates(port_pool_raw or raw_port)
+        if not port_pool_raw and 0 not in self.port_candidates:
+            self.port_candidates.append(0)
+        if not self.port_candidates:
+            raise ValueError('No valid ports configured via PORT or PORT_POOL')
+        self.port: int = self.port_candidates[0]
+        self.host: str = os.environ.get('HOST', '0.0.0.0')
 
     def get_strategy(self) -> str:
         if self.db_kind not in ('sqlite', 'mysql'):
@@ -78,6 +86,7 @@ class Config:
                 return SqliteUserRepository(conn)
 
             return repo_factory
+
         else:
             from .adapters.mysql_repo import MySQLUserRepository
 
@@ -85,3 +94,42 @@ class Config:
                 return MySQLUserRepository(conn)
 
             return repo_factory
+
+    @staticmethod
+    def _parse_port_candidates(raw: str) -> List[int]:
+        ports: List[int] = []
+        seen: set[int] = set()
+
+        for chunk in (piece.strip() for piece in raw.split(',') if piece.strip()):
+            if chunk.lower() == 'auto':
+                value = 0
+                Config._append_port_if_new(value, ports, seen)
+                continue
+
+            if '-' in chunk:
+                start_str, end_str = chunk.split('-', 1)
+                start = Config._coerce_port(start_str)
+                end = Config._coerce_port(end_str)
+                if start > end:
+                    raise ValueError(f'Invalid port range {chunk!r}')
+                for value in range(start, end + 1):
+                    Config._append_port_if_new(value, ports, seen)
+                continue
+
+            value = Config._coerce_port(chunk)
+            Config._append_port_if_new(value, ports, seen)
+
+        return ports
+
+    @staticmethod
+    def _coerce_port(raw: str) -> int:
+        value = int(raw)
+        if value < 0 or value > 65535:
+            raise ValueError(f'Invalid port number: {value}')
+        return value
+
+    @staticmethod
+    def _append_port_if_new(value: int, ports: List[int], seen: set[int]) -> None:
+        if value not in seen:
+            ports.append(value)
+            seen.add(value)

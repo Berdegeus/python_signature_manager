@@ -21,14 +21,15 @@ class RequestHandler(Protocol):
         """Process ``request`` and return an HTTP response."""
 
 
-def run_server(handler: RequestHandler, port: int) -> None:
+def run_server(handler: RequestHandler, port: int, host: str = "0.0.0.0") -> None:
     """Start a blocking TCP server that delegates to ``handler``."""
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(("0.0.0.0", port))
+        sock.bind((host, port))
         sock.listen(128)
-        print(f"[server] Listening on 0.0.0.0:{port}")
+        actual_host, actual_port = sock.getsockname()
+        print(f"[server] Listening on {actual_host}:{actual_port}")
         try:
             while True:
                 conn, addr = sock.accept()
