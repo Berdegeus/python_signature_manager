@@ -1,41 +1,48 @@
-import json,urllib.request,urllib.error
-base = 'http://127.0.0.1:8080'
+import json
+import urllib.error
+import urllib.request
 
-def get(url, headers=None):
-    req = urllib.request.Request(url, method='GET', headers=headers or {})
-    try:
-        with urllib.request.urlopen(req, timeout=3) as r:
-            body = r.read().decode()
-            print('GET', url, r.status, body)
-            return r.status, body
-    except urllib.error.HTTPError as e:
-        print('GET ERR', url, e.code, e.read().decode())
-    except Exception as e:
-        print('GET ERR', url, str(e))
+BASE_URL = "http://127.0.0.1:8080"
 
-def post(url, payload, headers=None):
-    data = json.dumps(payload).encode()
-    h = {'Content-Type':'application/json'}
-    if headers:
-        h.update(headers)
-    req = urllib.request.Request(url, data=data, method='POST', headers=h)
+
+def _log(prefix: str, url: str, status: int, body: str) -> None:
+    print(f"[{prefix}] {url} -> {status} | {body}")
+
+
+def _request(method: str, url: str, payload=None, headers=None, timeout: int = 5):
+    body_bytes = None
+    req_headers = headers.copy() if headers else {}
+    if payload is not None:
+        body_bytes = json.dumps(payload).encode()
+        req_headers.setdefault("Content-Type", "application/json")
+    request = urllib.request.Request(url, data=body_bytes, method=method, headers=req_headers)
     try:
-        with urllib.request.urlopen(req, timeout=5) as r:
-            body = r.read().decode()
-            print('POST', url, r.status, body)
-            return r.status, body
-    except urllib.error.HTTPError as e:
-        print('POST ERR', url, e.code, e.read().decode())
-    except Exception as e:
-        print('POST ERR', url, str(e))
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            text = response.read().decode()
+            _log(method, url, response.status, text)
+            return response.status, text
+    except urllib.error.HTTPError as err:
+        detail = err.read().decode()
+        print(f"[{method} ERRO]", url, err.code, detail)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[{method} ERRO]", url, str(exc))
+    return None, None
+
+
+def get(url: str, headers=None):
+    return _request("GET", url, headers=headers, timeout=3)
+
+
+def post(url: str, payload, headers=None):
+    return _request("POST", url, payload=payload, headers=headers)
+
 
 # Health
-get(base + '/health')
+get(BASE_URL + "/health")
 
 # Login
-st, body = post(base + '/login', {"email":"alice@example.com","password":"password123"})
-if st == 200:
-    token = json.loads(body)['token']
+status, response_body = post(BASE_URL + "/login", {"email": "alice@example.com", "password": "password123"})
+if status == 200 and response_body:
+    token = json.loads(response_body)["token"]
     # Status com token
-    get(base + '/user/1/status', headers={"Authorization": f"Bearer {token}"})
-
+    get(BASE_URL + "/user/1/status", headers={"Authorization": f"Bearer {token}"})

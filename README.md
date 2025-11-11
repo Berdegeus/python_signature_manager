@@ -1,56 +1,82 @@
-# Capitalia — Microsserviço de Gestão de Assinaturas (Python, HTTP puro)
+# Capitalia — Microsserviço de Gestão de Assinaturas (HTTP puro)
 
-Este projeto implementa um microsserviço único para gestão de assinaturas (streaming) com HTTP puro (sem frameworks web), JWT manual, Ports & Adapters, Repository + Data Mapper, Unit of Work, Strategy para alternar entre SQLite/MySQL e sem ORMs.
+Microsserviço único para gestão de assinaturas de streaming construído sem frameworks web, aproveitando HTTP puro, JWT manual, Ports & Adapters, Repository + Data Mapper, Unit of Work e Strategy para alternar dinamicamente entre SQLite e MySQL (sem ORM).
 
-> **Estrutura atualizada:** o código do serviço Python vive em `services/capitalia` e os utilitários compartilhados em `libs/python/*`. Outros serviços (router, purchase_requests, auth) também ficam em `services/`.
+> **Onde o código vive:** `services/capitalia` contém o serviço Python, `libs/python/*` guarda utilitários compartilhados e os demais serviços (router, purchase_requests, auth, etc.) ficam em `services/`.
+
+## Índice
+- [Visão Geral](#visão-geral)
+- [Arquitetura e Padrões](#arquitetura-e-padrões)
+- [Requisitos](#requisitos)
+- [Guia Rápido (SQLite)](#guia-rápido-sqlite)
+- [Alternando para MySQL](#alternando-para-mysql)
+- [Variáveis de Ambiente](#variáveis-de-ambiente)
+- [Endpoints Principais](#endpoints-principais)
+- [Fluxos via curl](#fluxos-via-curl)
+- [Autenticação & Erros](#autenticação--erros)
+- [Diagrama e Fluxo JWT](#diagrama-e-fluxo-jwt)
+- [Deploy em AWS RDS](#deploy-em-aws-rds-mysql)
+- [Testes](#testes)
+
+## Visão Geral
+
+- Serviço responsável por login, upgrade/downgrade de planos, suspensão e reativação.
+- Engine de regras expira trials automaticamente e mantém consistência via Unit of Work.
+- API exposta em HTTP puro (`BaseHTTPRequestHandler`) com CORS básico habilitado.
+- JWT HS256 assinado manualmente e validado sem dependências externas.
+
+## Arquitetura e Padrões
+
+| Camada | Responsabilidade |
+| --- | --- |
+| HTTP Handlers | Tradução request/response + roteamento mínimo. |
+| Domínio (Use Cases) | Regras de negócio, validações e transições de estado. |
+| Ports & Repositórios | Abstração de banco, clocks, gateways e Unit of Work. |
+| Adapters | Implementações concretas para SQLite/MySQL compartilhando interface. |
+
+Suporte adicional:
+- Strategy para escolher o adapter de banco com `DB_KIND`.
+- Repository + Data Mapper para isolar SQL do domínio.
+- Unit of Work centraliza commits/rollbacks de forma explícita.
 
 ## Requisitos
 
 - Python 3.10+
-- SQLite (builtin) ou MySQL (via PyMySQL)
+- SQLite (builtin) ou MySQL 8.x (via `PyMySQL`)
+- `pip` atualizado para instalar o pacote em modo editable
 
-## Setup rápido (SQLite)
+## Guia Rápido (SQLite)
 
-1. Gere o ambiente virtual com o helper multiplataforma e ative-o:
-
+1. **Preparar o ambiente virtual**
    ```bash
-   # A partir da raiz do repositório
+   # na raiz do repositório
    python scripts/bootstrap_service_env.py capitalia
    cd services/capitalia
    ```
+   - macOS/Linux: `source .venv/bin/activate`
+   - Windows PowerShell: `.venv\Scripts\Activate.ps1`
+   - Windows CMD: `.venv\Scripts\activate.bat`
+   - Git Bash (Windows): `source .venv/Scripts/activate`
 
-   O script cria (ou reaproveita) `.venv/`, atualiza `pip`/`setuptools` e instala `services.capitalia` em modo *editable* com o
-   `PYTHONPATH` apontando para a raiz do repositório.
+   > Problemas com o virtualenv? Rode `python scripts/bootstrap_service_env.py capitalia --force` para recriar.
 
-   Para ativar o ambiente:
-
-   - **macOS/Linux**: `source .venv/bin/activate`
-   - **Windows PowerShell**: `.venv\Scripts\Activate.ps1`
-   - **Windows Command Prompt (cmd.exe)**: `.venv\Scripts\activate.bat`
-   - **Git Bash no Windows**: `source .venv/Scripts/activate`
-
-   > Se precisar recriar o ambiente do zero (por exemplo, após um erro `Unable to copy ... venvlauncher.exe`), execute
-   > `python scripts/bootstrap_service_env.py capitalia --force` para limpar e gerar novamente.
-
-2. Inicialize e faça seed do SQLite:
-
+2. **Criar e popular o banco SQLite**
    ```bash
    python -m services.capitalia.scripts.init_sqlite
    python -m services.capitalia.scripts.seed_sqlite
    ```
 
-3. Execute o servidor (porta padrão 8080):
-
+3. **Subir o serviço (porta padrão 8080)**
    ```bash
    python -m services.capitalia.main
    ```
 
-4. Faça login e chame rotas protegidas (exemplos abaixo).
+4. **Autenticar e consumir as rotas protegidas**
+   - Use os comandos `curl` da seção [Fluxos via curl](#fluxos-via-curl) para validar rapidamente.
 
-## Alternar para MySQL
+## Alternando para MySQL
 
-1. Configure variáveis de ambiente (veja `services/capitalia/.env.example`):
-
+1. **Variáveis de ambiente**
    ```bash
    export DB_KIND=mysql
    export MYSQL_HOST=localhost
@@ -60,33 +86,49 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
    export JWT_SECRET=troque-por-uma-chave-forte
    export PORT=8080
    ```
+   > Há um modelo completo em `services/capitalia/.env.example`.
 
-2. Com o virtualenv ativo em `services/capitalia`, instale o pacote (caso ainda não tenha feito), adicione o driver MySQL e aplique DDL/seed:
-
+2. **Dependências e migrações**
    ```bash
    pip install -e .
-   # Instale o driver MySQL apenas se for usar MySQL:
-   # pip install PyMySQL
-   # Execute os .sql no seu MySQL:
-   # services/capitalia/scripts/init_mysql.sql e services/capitalia/scripts/seed_mysql.sql
+   pip install PyMySQL
+   mysql -u <user> -p < scripts/capitalia/init_mysql.sql
+   mysql -u <user> -p < scripts/capitalia/seed_mysql.sql
    python -m services.capitalia.main
    ```
 
-## Endpoints HTTP
+3. **Verificar conectividade**
+   - Teste `mysql -h <host> -P 3306 -u capitalia_user -p`.
+   - Garanta que o security group/liberação da porta 3306 esteja configurado.
 
-- POST `/login` → `{email,password}` → `{token}`
-- GET `/user/{id}/status` → aplica regras e persiste mudanças → `{user_id,plan,status}`
-- POST `/user/{id}/upgrade`
-- POST `/user/{id}/downgrade`
-- POST `/user/{id}/suspend`
-- POST `/user/{id}/reactivate`
-- GET `/health` → `{status:"ok"}`
+## Variáveis de Ambiente
 
-Suporte a CORS básico: `Access-Control-Allow-Origin: *` nas respostas. `OPTIONS` responde preflight com `Allow`, `Access-Control-Allow-Headers` e `Access-Control-Allow-Methods`.
+| Variável | Descrição | Default |
+| --- | --- | --- |
+| `PORT` | Porta HTTP do serviço | `8080` |
+| `DB_KIND` | `sqlite` ou `mysql` | `sqlite` |
+| `SQLITE_PATH` | Caminho para o arquivo `.db` | `capitalia.db` na raiz do serviço |
+| `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DB` | Configurações MySQL | _obrigatórios quando `DB_KIND=mysql`_ |
+| `JWT_SECRET` | Segredo HS256 para assinar tokens | **obrigatório** |
+| `JWT_EXP_SECONDS` | TTL do token | `3600` |
 
-Erros: `401` (token ausente/inválido), `404`, `422` (payload/estado inválido), `500` (erro interno sem stack trace).
+> Consulte `services/capitalia/.env.example` para a lista completa.
 
-### Exemplos curl
+## Endpoints Principais
+
+| Método | Rota | Descrição | Autenticação |
+| --- | --- | --- | --- |
+| POST | `/login` | Retorna JWT para o usuário seed ou credenciais válidas | Pública |
+| GET | `/user/{id}/status` | Calcula status efetivo, expira trials e persiste mudanças | `Bearer` (sub == id) |
+| POST | `/user/{id}/upgrade` | `basic|trial → premium` e mantém `status=active` | `Bearer` |
+| POST | `/user/{id}/downgrade` | `premium → basic` preservando `status=active` | `Bearer` |
+| POST | `/user/{id}/suspend` | Suspende somente usuários `premium` | `Bearer` |
+| POST | `/user/{id}/reactivate` | Reativa premium suspenso | `Bearer` |
+| GET | `/health` | Retorna `{status:"ok"}` | Pública |
+
+Todos os retornos são JSON e possuem CORS básico (`Access-Control-Allow-Origin: *`). Requests `OPTIONS` recebem `Allow`, `Access-Control-Allow-Headers` e `Access-Control-Allow-Methods`.
+
+## Fluxos via curl
 
 ```bash
 # Login (usuário seed)
@@ -94,35 +136,40 @@ curl -s -X POST http://localhost:8080/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"alice@example.com","password":"password123"}'
 
-# Guarde o token
+# Guardar token
 TOKEN="$(curl -s -X POST http://localhost:8080/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"alice@example.com","password":"password123"}' | jq -r .token)"
 
-# Status efetivo (aplica expiração do trial)
+# Status efetivo (expira trial)
 curl -s http://localhost:8080/user/1/status -H "Authorization: Bearer $TOKEN"
 
 # Healthcheck
 curl -s http://localhost:8080/health
 
-# Upgrade
+# Upgrade/Downgrade
 curl -s -X POST http://localhost:8080/user/1/upgrade -H "Authorization: Bearer $TOKEN"
-
-# Downgrade
 curl -s -X POST http://localhost:8080/user/1/downgrade -H "Authorization: Bearer $TOKEN"
 
-# Suspender (premium)
+# Suspender / Reativar
 curl -s -X POST http://localhost:8080/user/1/suspend -H "Authorization: Bearer $TOKEN"
-
-# Reativar (premium suspenso)
 curl -s -X POST http://localhost:8080/user/1/reactivate -H "Authorization: Bearer $TOKEN"
 ```
 
-## Configuração (env vars)
+## Autenticação & Erros
 
-Veja `services/capitalia/.env.example`.
+- **JWT**: assinatura HS256, payload inclui `sub` (id), `email`, `plan`, `iat`, `exp`. Expiração padrão de 3600s.
+- **Headers**: sempre envie `Authorization: Bearer <token>` nas rotas protegidas.
+- **Códigos de status**:
+  - `200 OK` — operação bem-sucedida.
+  - `401 Unauthorized` — token ausente/inválido/expirado ou login inválido.
+  - `403 Forbidden` — tentativa de acessar outro `{id}`.
+  - `404 Not Found` — usuário ou recurso inexistente.
+  - `405 Method Not Allowed` — método não suportado.
+  - `422 Unprocessable Entity` — payload inválido ou regra de negócio violada.
+  - `500 Internal Server Error` — erro inesperado (sem stack trace).
 
-## Diagrama (ASCII) — Ports & Adapters
+## Diagrama e Fluxo JWT
 
 ```
      +---------------------+         +----------------------+
@@ -144,8 +191,6 @@ Veja `services/capitalia/.env.example`.
    +----------+   +--------------+
 ```
 
-## Fluxo de autenticação (JWT)
-
 ```
 Client -> POST /login {email,password}
 Server: valida credenciais -> assina JWT HS256 com exp=+3600s -> {token}
@@ -153,138 +198,43 @@ Client -> requests protegidas com Authorization: Bearer <token>
 Server: verifica assinatura e exp -> autoriza -> executa caso de uso
 ```
 
-## Referência de Rotas (API)
+## Deploy em AWS RDS (MySQL)
 
-Base URL: `http://<host>:<PORT>` (default `http://localhost:8080`). Todas as respostas são JSON.
+1. **Criar instância**
+   - AWS Console → RDS → Create database → MySQL 8.x.
+   - Template *Free tier* (quando disponível).
+   - Nome sugerido: `capitalia-mysql`, VPC default, Public access `Yes` apenas para desenvolvimento.
+   - Security Group com inbound 3306 liberado somente para seu IP.
 
-### POST /login
-- Autenticação: pública (sem token).
-- Corpo: `{"email": "<email>", "password": "<senha>"}`
-- Sucesso 200: `{ "token": "<JWT>" }` (HS256, `exp` padrão 3600s).
-- Erros:
-  - 422 Unprocessable Entity: JSON inválido ou campos ausentes.
-  - 401 Unauthorized: credenciais inválidas.
-  - 500 Internal Server Error: erro inesperado (sem stack trace).
+2. **Obter endpoint**
+   - Em *Databases*, selecione a instância e copie `Endpoint` e porta 3306.
 
-### GET /user/{id}/status
-- Autenticação: `Authorization: Bearer <token>` (obrigatório).
-- Autorização: somente o próprio usuário (`sub` do JWT deve ser igual a `{id}`).
-- Ação: calcula status efetivo (expira trial após 30 dias) e persiste mudança se houver.
-- Sucesso 200: `{ "user_id": <id>, "plan": "basic|trial|premium", "status": "active|suspended|expired" }`.
-- Erros:
-  - 401 Unauthorized: token ausente, inválido ou expirado.
-  - 403 Forbidden: tentar acessar outro `{id}`.
-  - 404 Not Found: usuário não encontrado.
-  - 500 Internal Server Error: erro inesperado.
+3. **Criar database lógico e usuário**
+   ```sql
+   mysql -h <ENDPOINT> -P 3306 -u <MASTER_USER> -p
+   CREATE DATABASE capitalia CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+   CREATE USER 'capitalia_user'@'%' IDENTIFIED BY '<senha-forte>';
+   GRANT ALL PRIVILEGES ON capitalia.* TO 'capitalia_user'@'%';
+   FLUSH PRIVILEGES;
+   ```
 
-### POST /user/{id}/upgrade
-- Autenticação: `Bearer`.
-- Autorização: somente o próprio usuário (`sub == {id}`).
-- Ação: `basic|trial → premium` e `status=active`.
-- Corpo: vazio.
-- Sucesso 200: `{ "user_id": <id>, "plan": "premium", "status": "active" }`.
-- Erros:
-  - 401 Unauthorized: token ausente/inválido/expirado.
-  - 403 Forbidden: outro `{id}`.
-  - 404 Not Found: usuário inexistente.
-  - 422 Unprocessable Entity: plano atual não permite upgrade (já é premium).
-  - 500 Internal Server Error.
+4. **Aplicar DDL/seed**
+   - Rode `services/capitalia/scripts/init_mysql.sql` e `services/capitalia/scripts/seed_mysql.sql`.
 
-### POST /user/{id}/downgrade
-- Autenticação: `Bearer`.
-- Autorização: somente o próprio usuário (`sub == {id}`).
-- Ação: `premium → basic` e `status=active`.
-- Corpo: vazio.
-- Sucesso 200: `{ "user_id": <id>, "plan": "basic", "status": "active" }`.
-- Erros:
-  - 401 Unauthorized; 403 Forbidden; 404 Not Found.
-  - 422 Unprocessable Entity: não está em premium.
-  - 500 Internal Server Error.
-
-### POST /user/{id}/suspend
-- Autenticação: `Bearer`.
-- Autorização: somente o próprio usuário (`sub == {id}`).
-- Ação: suspende somente se `plan=premium`.
-- Corpo: vazio.
-- Sucesso 200: `{ "user_id": <id>, "plan": "premium", "status": "suspended" }`.
-- Erros:
-  - 401 Unauthorized; 403 Forbidden; 404 Not Found.
-  - 422 Unprocessable Entity: não está em premium.
-  - 500 Internal Server Error.
-
-### POST /user/{id}/reactivate
-- Autenticação: `Bearer`.
-- Autorização: somente o próprio usuário (`sub == {id}`).
-- Ação: reativa somente se `plan=premium` e `status=suspended`.
-- Corpo: vazio.
-- Sucesso 200: `{ "user_id": <id>, "plan": "premium", "status": "active" }`.
-- Erros:
-  - 401 Unauthorized; 403 Forbidden; 404 Not Found.
-  - 422 Unprocessable Entity: não está suspenso/premium.
-  - 500 Internal Server Error.
-
-### Autenticação e JWT
-- Header: `Authorization: Bearer <token>`.
-- Assinatura: HS256; payload inclui `sub` (id do usuário), `email`, `plan`, `iat`, `exp`.
-- Expiração padrão: 3600s (1h).
-
-### Códigos de erro (resumo)
-- 200 OK: operação bem-sucedida.
-- 401 Unauthorized: token ausente/inválido/expirado (ou login inválido).
-- 403 Forbidden: usuário tentando acessar/modificar outro `{id}`.
-- 404 Not Found: recurso inexistente (ex.: usuário).
-- 405 Method Not Allowed: método HTTP incorreto para a rota (ex.: usar GET onde é POST).
-- 422 Unprocessable Entity: JSON inválido/campos obrigatórios ausentes ou regra de negócio violada.
-- 500 Internal Server Error: erro inesperado; mensagem genérica (sem stack trace).
-
-## AWS RDS (MySQL) — Passo a passo
-
-1) Criar instância RDS MySQL
-
-- Console AWS → RDS → Create database → MySQL 8.x
-- Template: Free tier (se disponível)
-- DB instance identifier: `capitalia-mysql`
-- Defina master username/password
-- VPC default
-- Public access: Yes (apenas para TDE; produção: Private + bastion)
-- Security Group: permita Inbound TCP 3306 somente do seu IP
-- Crie e aguarde status `Available`
-
-2) Obter endpoint
-
-- Em Databases → selecione a instância → copie Endpoint e Port (3306)
-
-3) Criar database lógico e usuário
-
-```sql
-mysql -h <ENDPOINT> -P 3306 -u <MASTER_USER> -p
-CREATE DATABASE capitalia CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
-CREATE USER 'capitalia_user'@'%' IDENTIFIED BY '<senha-forte>';
-GRANT ALL PRIVILEGES ON capitalia.* TO 'capitalia_user'@'%';
-FLUSH PRIVILEGES;
-```
-
-4) Aplicar DDL e seed
-
-- Rode `services/capitalia/scripts/init_mysql.sql` e `services/capitalia/scripts/seed_mysql.sql` no DB `capitalia`.
-
-5) Configurar o microsserviço
-
-```bash
-export DB_KIND=mysql
-export MYSQL_HOST=<endpoint RDS>
-export MYSQL_USER=capitalia_user
-export MYSQL_PASSWORD=<senha>
-export MYSQL_DB=capitalia
-export JWT_SECRET=<segredo forte>
-pip install -e services/capitalia
-# pip install PyMySQL  # se MySQL estiver habilitado
-python -m services.capitalia.main
-```
+5. **Configurar o serviço**
+   ```bash
+   export DB_KIND=mysql
+   export MYSQL_HOST=<endpoint RDS>
+   export MYSQL_USER=capitalia_user
+   export MYSQL_PASSWORD=<senha>
+   export MYSQL_DB=capitalia
+   export JWT_SECRET=<segredo forte>
+   pip install -e services/capitalia
+   pip install PyMySQL
+   python -m services.capitalia.main
+   ```
 
 ## Testes
-
-Execute:
 
 ```bash
 python -m unittest discover -s tests -p 'test_*.py'
