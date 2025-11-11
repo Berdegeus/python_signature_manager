@@ -1,41 +1,68 @@
-# Capitalia — Microsserviço de Gestão de Assinaturas (Python, HTTP puro)
+# Capitalia — Microsserviço de Assinaturas (HTTP puro)
 
-Este projeto implementa um microsserviço único para gestão de assinaturas (streaming) com HTTP puro (sem frameworks web), JWT manual, Ports & Adapters, Repository + Data Mapper, Unit of Work, Strategy para alternar entre SQLite/MySQL e sem ORMs.
+Microsserviço de streaming construído 100% sobre a biblioteca padrão do Python (sem frameworks web). A solução completa inclui:
+
+- Serviço principal em `capitalia/` (HTTP puro + JWT manual + Ports & Adapters).
+- Router em `router/` para descoberta e balanceamento entre múltiplas instâncias.
+- Serviço .NET de solicitações de compra em `CsharpRequest/` (opcional).
+
+## Índice
+- [Visão Geral](#visão-geral)
+- [Arquitetura](#arquitetura)
+- [Requisitos](#requisitos)
+- [Guia Rápido (SQLite)](#guia-rápido-sqlite)
+- [Alternar para MySQL](#alternar-para-mysql)
+- [Variáveis de Ambiente](#variáveis-de-ambiente)
+- [Endpoints e Fluxos](#endpoints-e-fluxos)
+- [Router & Balanceamento](#router--balanceamento)
+- [Diagramas](#diagramas)
+- [Testes](#testes)
+
+## Visão Geral
+
+- HTTP Handlers manuais com `BaseHTTPRequestHandler`, CORS básico e suporte a `HEAD`.
+- Domínio separado com Repository + Data Mapper, Unit of Work e Strategy para alternar SQLite/MySQL.
+- JWT HS256 assinado/verificado manualmente (sem dependências externas).
+- Roteador auxiliar faz round-robin entre instâncias (auto-descobertas via `/health`).
+
+## Arquitetura
+
+| Camada | Função |
+| --- | --- |
+| `capitalia/app/handlers.py` | Recebe requests, valida auth e delega para os casos de uso. |
+| `capitalia/domain/*` | Modelos, regras de status/planos e serviço de assinatura. |
+| `capitalia/adapters/*` | Repositórios concretos para SQLite/MySQL. |
+| `capitalia/ports/*` | Interfaces (clock, repos) e contratos de infra. |
+| `router/` | Proxy HTTP simples para distribuir tráfego entre instâncias Capitalia. |
 
 ## Requisitos
 
 - Python 3.10+
-- SQLite (builtin) ou MySQL (via PyMySQL)
+- SQLite (builtin) ou MySQL 8.x com `PyMySQL`
+- `pip` atualizado (para instalar `capitalia/requirements.txt`)
 
-## Setup rápido (SQLite)
+## Guia Rápido (SQLite)
 
-1. Crie e ative um virtualenv e instale dependências:
-
+1. Criar virtualenv e instalar deps:
    ```bash
    python -m venv .venv
    source .venv/bin/activate
    pip install -r capitalia/requirements.txt
    ```
-
-2. Inicialize e faça seed do SQLite:
-
+2. Provisionar banco:
    ```bash
    python -m capitalia.scripts.init_sqlite
    python -m capitalia.scripts.seed_sqlite
    ```
-
-3. Execute o servidor (porta padrão 8000, com fallback automático até 8100):
-
+3. Rodar o serviço (porta padrão 8000, com fallback automático até 8100):
    ```bash
    python -m capitalia.main
    ```
-
-4. Faça login e chame rotas protegidas (exemplos abaixo).
+4. Use os comandos `curl` da seção [Endpoints e Fluxos](#endpoints-e-fluxos) para validar o login e as rotas protegidas.
 
 ## Alternar para MySQL
 
-1. Configure variáveis de ambiente (veja `capitalia/.env.example`):
-
+1. Configure as variáveis (veja `capitalia/.env.example`):
    ```bash
    export DB_KIND=mysql
    export MYSQL_HOST=localhost
@@ -45,105 +72,92 @@ Este projeto implementa um microsserviço único para gestão de assinaturas (st
    export JWT_SECRET=troque-por-uma-chave-forte
    export PORT=8000-8100
    ```
-
-2. Instale dependências (PyMySQL já está em `requirements.txt`), aplique DDL e seed:
-
+2. Instale dependências e aplique DDL/seed:
    ```bash
    pip install -r capitalia/requirements.txt
-   # Execute os .sql no seu MySQL:
-   # capitalia/scripts/init_mysql.sql e capitalia/scripts/seed_mysql.sql
+   mysql < capitalia/scripts/init_mysql.sql
+   mysql < capitalia/scripts/seed_mysql.sql
    python -m capitalia.main
    ```
 
-## Endpoints HTTP
+## Variáveis de Ambiente
 
-- POST `/login` → `{email,password}` → `{token}`
-- GET `/user/{id}/status` → aplica regras e persiste mudanças → `{user_id,plan,status}`
-- POST `/user/{id}/upgrade`
-- POST `/user/{id}/downgrade`
-- POST `/user/{id}/suspend`
-- POST `/user/{id}/reactivate`
-- GET `/health` → `{status:"ok"}`
+| Variável | Descrição | Default |
+| --- | --- | --- |
+| `HOST` | Interface/IP para bind | `0.0.0.0` |
+| `PORT` | Porta única ou intervalo (ex.: `8000-8100`) | `8000-8100` |
+| `PORT_POOL` | Mesma sintaxe de `PORT`; use para pools monitorados pelo router | `8000-8100` |
+| `DB_KIND` | `sqlite` ou `mysql` | `sqlite` |
+| `SQLITE_PATH` | Caminho do `.db` | `capitalia.db` |
+| `MYSQL_*` | Host, usuário, senha, banco, porta | vide `.env.example` |
+| `JWT_SECRET` | Segredo HS256 | obrigatório |
 
-Suporte a CORS básico: `Access-Control-Allow-Origin: *` nas respostas. `OPTIONS` responde preflight com `Allow`, `Access-Control-Allow-Headers` e `Access-Control-Allow-Methods`.
+> `PORT`/`PORT_POOL` aceitam o token `auto` (porta 0) para cenários locais fora do roteador. Quando há router, mantenha ranges explícitos para coincidir com o que ele monitora.
 
-Erros: `401` (token ausente/inválido), `404`, `422` (payload/estado inválido), `500` (erro interno sem stack trace).
+## Endpoints e Fluxos
 
-### Exemplos curl
+| Método | Rota | Descrição | Auth |
+| --- | --- | --- | --- |
+| POST | `/login` | Retorna JWT para usuários válidos | Pública |
+| GET | `/user/{id}/status` | Calcula status efetivo (expira trial) | Bearer (`sub == id`) |
+| POST | `/user/{id}/upgrade` | `basic|trial → premium` | Bearer |
+| POST | `/user/{id}/downgrade` | `premium → basic` | Bearer |
+| POST | `/user/{id}/suspend` | Suspende premium | Bearer |
+| POST | `/user/{id}/reactivate` | Reativa premium suspenso | Bearer |
+| GET | `/health` | `{status:"ok"}` | Pública |
+
+Todos os retornos são JSON, CORS com `Access-Control-Allow-Origin: *`, e `OPTIONS` responde preflight com `Allow`/`Access-Control-Allow-*`.
+
+### Exemplos `curl`
 
 ```bash
-# Use BASE=http://localhost quando estiver passando pelo router (porta 80).
-# Para falar direto com uma instância específica, consulte o log para saber a porta (ex.: http://localhost:8000).
+# Router (porta 80) ou instância direta (ex.: http://localhost:8000)
 BASE=${BASE:-http://localhost}
 
-# Login (usuário seed)
 curl -s -X POST "$BASE/login" \
   -H 'Content-Type: application/json' \
   -d '{"email":"alice@example.com","password":"password123"}'
 
-# Guarde o token
 TOKEN="$(curl -s -X POST "$BASE/login" \
   -H 'Content-Type: application/json' \
   -d '{"email":"alice@example.com","password":"password123"}' | jq -r .token)"
 
-# Status efetivo (aplica expiração do trial)
 curl -s "$BASE/user/1/status" -H "Authorization: Bearer $TOKEN"
-
-# Healthcheck
 curl -s "$BASE/health"
-
-# Upgrade
 curl -s -X POST "$BASE/user/1/upgrade" -H "Authorization: Bearer $TOKEN"
-
-# Downgrade
 curl -s -X POST "$BASE/user/1/downgrade" -H "Authorization: Bearer $TOKEN"
-
-# Suspender (premium)
 curl -s -X POST "$BASE/user/1/suspend" -H "Authorization: Bearer $TOKEN"
-
-# Reativar (premium suspenso)
 curl -s -X POST "$BASE/user/1/reactivate" -H "Authorization: Bearer $TOKEN"
 ```
 
-## Configuração (env vars)
+### Códigos comuns
 
-Veja `capitalia/.env.example`. Principais variáveis:
+- `200 OK` — sucesso.
+- `401 Unauthorized` — token ausente/inválido (ou login errado).
+- `403 Forbidden` — tentativa de acessar outro `{id}`.
+- `404 Not Found` — usuário inexistente.
+- `405 Method Not Allowed` — método fora da rota.
+- `422 Unprocessable Entity` — payload inválido ou regra de negócio violada.
+- `500 Internal Server Error` — erro inesperado (sem stack trace).
 
-- `HOST`: interface/IP para bind (default `0.0.0.0`).
-- `PORT`: aceita um único valor ou listas/intervalos. O padrão agora é `8000-8100`, então a primeira instância tenta `8000`, a segunda `8001`, e assim por diante.
-- `PORT_POOL`: mesmos formatos de `PORT`. Use para explicitar o range que será monitorado pelo router (por padrão `8000-8100`). Evite incluir `auto` quando houver roteador fazendo descoberta.
-- `PORT`/`PORT_POOL` ainda entendem o token `auto` (valor `0`) para permitir portas livres do SO em cenários locais fora do cluster.
+## Router & Balanceamento
 
-Para subir várias instâncias locais sem colidir, defina um pool e execute múltiplas vezes:
+O diretório `router/` implementa um reverse proxy minimalista:
 
-```bash
-export PORT_POOL=8000-8100
-python -m capitalia.main  # cada processo pegará a próxima porta livre do pool
-```
+- Faz round-robin entre portas configuradas (`BACKEND_PORTS`/`BACKEND_PORT_POOL`).
+- Verifica saúde via `GET /health`.
+- Publica a API unificada na porta `ROUTER_PORT` (default 80).
+- Compatível com múltiplas instâncias rodando a partir do mesmo repositório (ex.: `PORT_POOL=8000-8100`).
 
-Sem `PORT_POOL`, cada instância tentará `PORT` e, se já houver alguém escutando, cairá para `auto` e mostrará no log a porta atribuída pelo SO.
-
-## Router e Balanceamento
-
-O diretório `router/` contém um reverse proxy/roteador simples escrito também com libs padrão. Ele descobre instâncias saudáveis (fazendo `GET /health`) dentro do range `8000-8100` e distribui as requisições em round-robin, expondo tudo na porta 80.
-
-- `BACKEND_HOST`: host ou IP onde o Capitalia está rodando (default `127.0.0.1`).
-- `BACKEND_PORTS`: lista/intervalos monitorados (default `8000-8100`). Alternativamente, use `BACKEND_PORT_POOL`; mantenha alinhado com `PORT_POOL` das instâncias.
-- `BACKEND_DISCOVERY_INTERVAL`: segundos entre varreduras (default `2`).
-- `BACKEND_TIMEOUT`: timeout da chamada ao backend (default `10`).
-- `BACKEND_HEALTH_PATH`: endpoint usado para checar saúde (default `/health`).
-- `ROUTER_PORT`: porta pública do roteador (default `80`).
-
-Exemplo local (Linux) containerizado, usando host networking para compartilhar o range 8000-8100 entre múltiplos containers e publicar o router em `http://localhost`:
+Exemplo (Linux) com host networking:
 
 ```bash
 docker compose up --build --scale app=4 router
-# As instâncias ocuparão portas entre 8000 e 8100 e o router servirá em http://localhost/
 ```
 
-> Dica: `network_mode: host` só está disponível diretamente em hosts Linux. Em macOS/Windows, utilize WSL2/Linux para reproduzir a topologia ou execute os processos nativamente fora de containers.
+> Em macOS/Windows utilize WSL2 ou rode os processos diretamente fora de containers para simular o mesmo range de portas.
 
-## Diagrama (ASCII) — Ports & Adapters
+## Diagramas
 
 ```
      +---------------------+         +----------------------+
@@ -165,38 +179,20 @@ docker compose up --build --scale app=4 router
    +----------+   +--------------+
 ```
 
-## Fluxo de autenticação (JWT)
-
 ```
 Client -> POST /login {email,password}
-Server: valida credenciais -> assina JWT HS256 com exp=+3600s -> {token}
-Client -> requests protegidas com Authorization: Bearer <token>
-Server: verifica assinatura e exp -> autoriza -> executa caso de uso
+Server: valida credenciais -> assina JWT HS256 (exp=3600s) -> {token}
+Client -> chama rotas com Authorization: Bearer <token>
+Server: valida assinatura/exp -> executa caso de uso
 ```
 
-## Referência de Rotas (API)
+## Testes
 
-Base URL: `http://<host>:<PORT>` (com o router padrão, `http://localhost`). Todas as respostas são JSON.
+```bash
+python -m unittest discover -s tests -p 'test_*.py'
+```
 
-### POST /login
-- Autenticação: pública (sem token).
-- Corpo: `{"email": "<email>", "password": "<senha>"}`
-- Sucesso 200: `{ "token": "<JWT>" }` (HS256, `exp` padrão 3600s).
-- Erros:
-  - 422 Unprocessable Entity: JSON inválido ou campos ausentes.
-  - 401 Unauthorized: credenciais inválidas.
-  - 500 Internal Server Error: erro inesperado (sem stack trace).
-
-### GET /user/{id}/status
-- Autenticação: `Authorization: Bearer <token>` (obrigatório).
-- Autorização: somente o próprio usuário (`sub` do JWT deve ser igual a `{id}`).
-- Ação: calcula status efetivo (expira trial após 30 dias) e persiste mudança se houver.
-- Sucesso 200: `{ "user_id": <id>, "plan": "basic|trial|premium", "status": "active|suspended|expired" }`.
-- Erros:
-  - 401 Unauthorized: token ausente, inválido ou expirado.
-  - 403 Forbidden: tentar acessar outro `{id}`.
-  - 404 Not Found: usuário não encontrado.
-  - 500 Internal Server Error: erro inesperado.
+Os testes de integração (`tests/test_http_flow_sqlite.py`, etc.) exercitam o handler completo, garantindo regressão mínima ao alterar regras ou mensagens.
 
 ### POST /user/{id}/upgrade
 - Autenticação: `Bearer`.

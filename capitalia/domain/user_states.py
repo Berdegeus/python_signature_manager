@@ -18,16 +18,16 @@ class UserState(ABC):
         return self.name
 
     def upgrade(self, user: "User") -> None:
-        raise ValidationError("only basic|trial can upgrade to premium")
+        raise ValidationError("apenas planos basic ou trial podem atualizar para premium")
 
     def downgrade(self, user: "User") -> None:
-        raise ValidationError("only premium can downgrade to basic")
+        raise ValidationError("apenas usuários premium podem realizar downgrade para basic")
 
     def suspend(self, user: "User") -> None:
-        raise ValidationError("only premium can be suspended")
+        raise ValidationError("apenas assinaturas premium podem ser suspensas")
 
     def reactivate(self, user: "User") -> None:
-        raise ValidationError("only suspended premium can reactivate")
+        raise ValidationError("somente assinaturas premium suspensas podem ser reativadas")
 
 
 class ActiveState(UserState):
@@ -44,19 +44,19 @@ class ActiveState(UserState):
 
     def upgrade(self, user: "User") -> None:
         if user.plan not in ("basic", "trial"):
-            raise ValidationError("only basic|trial can upgrade to premium")
+            raise ValidationError("apenas planos basic ou trial podem atualizar para premium")
         user.plan = "premium"
         user.status = "active"
 
     def downgrade(self, user: "User") -> None:
         if user.plan != "premium":
-            raise ValidationError("only premium can downgrade to basic")
+            raise ValidationError("apenas usuários premium podem realizar downgrade para basic")
         user.plan = "basic"
         user.status = "active"
 
     def suspend(self, user: "User") -> None:
         if user.plan != "premium":
-            raise ValidationError("only premium can be suspended")
+            raise ValidationError("apenas assinaturas premium podem ser suspensas")
         user.status = "suspended"
 
 
@@ -68,13 +68,13 @@ class SuspendedState(UserState):
 
     def downgrade(self, user: "User") -> None:
         if user.plan != "premium":
-            raise ValidationError("only premium can downgrade to basic")
+            raise ValidationError("apenas usuários premium podem realizar downgrade para basic")
         user.plan = "basic"
         user.status = "active"
 
     def reactivate(self, user: "User") -> None:
         if user.plan != "premium":
-            raise ValidationError("only suspended premium can reactivate")
+            raise ValidationError("somente assinaturas premium suspensas podem ser reativadas")
         user.status = "active"
 
 
@@ -86,7 +86,7 @@ class ExpiredState(UserState):
 
     def upgrade(self, user: "User") -> None:
         if user.plan not in ("basic", "trial"):
-            raise ValidationError("only basic|trial can upgrade to premium")
+            raise ValidationError("apenas planos basic ou trial podem atualizar para premium")
         user.plan = "premium"
         user.status = "active"
 
@@ -102,7 +102,7 @@ def get_user_state(status: str) -> UserState:
     try:
         return _STATE_REGISTRY[status]
     except KeyError as exc:  # pragma: no cover - defensive branch
-        raise ValidationError(f"unknown status '{status}'") from exc
+        raise ValidationError(f"status desconhecido '{status}'") from exc
 
 
 def resolve_state_for(user: "User") -> UserState:

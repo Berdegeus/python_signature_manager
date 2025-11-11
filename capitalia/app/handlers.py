@@ -41,19 +41,19 @@ def json_error(status: HTTPStatus | int, message: str, *, extra_headers: Optiona
     return resp
 
 
-def unauthorized(message: str = "Unauthorized") -> HttpResponse:
+def unauthorized(message: str = "Acesso não autorizado") -> HttpResponse:
     return json_error(HTTPStatus.UNAUTHORIZED, message)
 
 
-def forbidden(message: str = "Forbidden") -> HttpResponse:
+def forbidden(message: str = "Operação não permitida") -> HttpResponse:
     return json_error(HTTPStatus.FORBIDDEN, message)
 
 
 def not_found() -> HttpResponse:
-    return json_error(HTTPStatus.NOT_FOUND, "Not Found")
+    return json_error(HTTPStatus.NOT_FOUND, "Recurso não encontrado")
 
 
-def bad_request(message: str = "Bad Request") -> HttpResponse:
+def bad_request(message: str = "Requisição inválida") -> HttpResponse:
     return json_error(HTTPStatus.BAD_REQUEST, message)
 
 
@@ -78,7 +78,7 @@ class ErrorHandler(AbstractHandler):
         try:
             return self._handle_next(ctx)
         except Exception:  # noqa: BLE001
-            ctx.response = json_error(HTTPStatus.INTERNAL_SERVER_ERROR, "Internal Server Error")
+            ctx.response = json_error(HTTPStatus.INTERNAL_SERVER_ERROR, "Erro interno no servidor")
             return ctx.response
 
 
@@ -156,7 +156,11 @@ class RoutingHandler(AbstractHandler):
             method_to_check = "GET" if is_head and "GET" in route.methods else request_method
             if method_to_check not in route.methods:
                 headers = {"Allow": ", ".join(sorted(allowed))}
-                ctx.response = json_error(HTTPStatus.METHOD_NOT_ALLOWED, "Method Not Allowed", extra_headers=headers)
+                ctx.response = json_error(
+                    HTTPStatus.METHOD_NOT_ALLOWED,
+                    "Método HTTP não suportado",
+                    extra_headers=headers,
+                )
                 return ctx.response
             return self._handle_next(ctx)
         ctx.response = not_found()
@@ -174,7 +178,7 @@ class AuthHandler(AbstractHandler):
             return self._handle_next(ctx)
         auth_header = ctx.request.headers.get("authorization")
         if not auth_header or not auth_header.lower().startswith("bearer "):
-            ctx.response = unauthorized("missing bearer token")
+            ctx.response = unauthorized("bearer token ausente")
             return ctx.response
         token = auth_header.split(" ", 1)[1].strip()
         try:
@@ -243,11 +247,11 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
         try:
             text = raw.decode() or "{}"
         except UnicodeDecodeError as exc:
-            raise ValidationError("invalid JSON body") from exc
+            raise ValidationError("corpo JSON inválido") from exc
         try:
             return json.loads(text)
         except json.JSONDecodeError as exc:
-            raise ValidationError("invalid JSON body") from exc
+            raise ValidationError("corpo JSON inválido") from exc
 
     def make_service() -> SubscriptionService:
         return SubscriptionService(uow_factory, clock)
@@ -255,19 +259,19 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
     def handle_login(ctx: RequestContext) -> HttpResponse:
         content_type = (ctx.request.headers.get("content-type") or "").lower()
         if "application/json" not in content_type:
-            return bad_request("Content-Type must be application/json")
+            return bad_request("Content-Type precisa ser application/json")
         body = read_json(ctx.request)
         email = (body.get("email") or "").strip()
         password = body.get("password") or ""
         if not email or not password:
-            return json_error(HTTPStatus.UNPROCESSABLE_ENTITY, "email and password required")
+            return json_error(HTTPStatus.UNPROCESSABLE_ENTITY, "email e senha são obrigatórios")
         with uow_factory() as uow:
             user = uow.users.get_by_email(email)
             if not user:
-                return unauthorized("invalid credentials")
+                return unauthorized("credenciais inválidas")
             password_hash = hashlib.sha256((user.salt + password).encode()).hexdigest()
             if password_hash != user.password_hash:
-                return unauthorized("invalid credentials")
+                return unauthorized("credenciais inválidas")
             token = jwt_sign({"sub": user.id, "email": user.email, "plan": user.plan}, jwt_secret, 3600)
         return make_json_response(HTTPStatus.OK, {"token": token})
 
@@ -325,7 +329,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
             {"GET"},
             handle_get_status,
             requires_auth=True,
-            authorize=ensure_same_user("cannot access another user's status"),
+            authorize=ensure_same_user("não é possível acessar o status de outro usuário"),
         ),
         Route("login", re.compile(r"^/login$"), {"POST"}, handle_login, requires_auth=False),
         Route(
@@ -334,7 +338,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
             {"POST"},
             handle_upgrade,
             requires_auth=True,
-            authorize=ensure_same_user("cannot modify another user's plan"),
+            authorize=ensure_same_user("não é possível alterar o plano de outro usuário"),
         ),
         Route(
             "downgrade",
@@ -342,7 +346,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
             {"POST"},
             handle_downgrade,
             requires_auth=True,
-            authorize=ensure_same_user("cannot modify another user's plan"),
+            authorize=ensure_same_user("não é possível alterar o plano de outro usuário"),
         ),
         Route(
             "suspend",
@@ -350,7 +354,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
             {"POST"},
             handle_suspend,
             requires_auth=True,
-            authorize=ensure_same_user("cannot modify another user's plan"),
+            authorize=ensure_same_user("não é possível alterar o plano de outro usuário"),
         ),
         Route(
             "reactivate",
@@ -358,7 +362,7 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
             {"POST"},
             handle_reactivate,
             requires_auth=True,
-            authorize=ensure_same_user("cannot modify another user's plan"),
+            authorize=ensure_same_user("não é possível alterar o plano de outro usuário"),
         ),
     ]
 
@@ -384,4 +388,3 @@ __all__ = [
     "build_handler",
     "RequestProcessor",
 ]
-

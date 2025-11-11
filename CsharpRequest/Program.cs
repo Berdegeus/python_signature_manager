@@ -1,4 +1,10 @@
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.OpenApi.Models;
 using PurchaseRequestsService.Infrastructure;
 using PurchaseRequestsService.Integrations;
@@ -8,13 +14,13 @@ using PurchaseRequestsService.Transport;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=app.db";
-
-var urls = builder.Configuration.GetSection("Urls").Get<string[]>() ?? Array.Empty<string>();
-if (urls.Length > 0)
+var binding = BindingResolver.Resolve(builder.Configuration);
+if (binding.Urls.Length > 0)
 {
-    builder.WebHost.UseUrls(urls);
+    builder.WebHost.UseUrls(binding.Urls);
 }
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=app.db";
 
 builder.Services.AddDbContext<PurchaseRequestContext>(options =>
     options.UseSqlite(connectionString));
@@ -31,6 +37,16 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 builder.Services.Configure<ConsulOptions>(builder.Configuration.GetSection("Consul"));
+builder.Services.PostConfigure<ConsulOptions>(options =>
+{
+    var serviceHost = binding.AnnounceHost;
+    var selectedPort = binding.SelectedPort;
+    if (selectedPort.HasValue)
+    {
+        options.ServiceAddress = $"http://{serviceHost}:{selectedPort.Value}";
+        options.ServiceId = $"{options.ServiceName}-{selectedPort.Value}";
+    }
+});
 builder.Services.AddHostedService<ConsulRegistrationHostedService>();
 
 builder.Services.Configure<CapitaliaOptions>(builder.Configuration.GetSection("Capitalia"));
@@ -51,6 +67,22 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<PurchaseRequestContext>();
     db.Database.EnsureCreated();
 }
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var server = app.Services.GetService<IServer>();
+    var feature = server?.Features.Get<IServerAddressesFeature>();
+    if (feature is null || feature.Addresses.Count == 0)
+    {
+        app.Logger.LogInformation("Purchase Requests Service iniciado.");
+        return;
+    }
+
+    foreach (var address in feature.Addresses)
+    {
+        app.Logger.LogInformation("Purchase Requests Service escutando em {Address}", address);
+    }
+});
 
 if (app.Environment.IsDevelopment())
 {
@@ -394,3 +426,136 @@ app.MapPost("/api/requests/{id:guid}/external-approval", submitForExternalApprov
 app.MapPost("/api/requests/{id:guid}/reject", rejectPurchaseRequestHandler);
 
 app.Run();
+
+static class BindingResolver
+{
+    public static BindingConfiguration Resolve(ConfigurationManager configuration)
+    {
+        var serviceHost = Environment.GetEnvironmentVariable("SERVICE_HOST")
+            ?? configuration["ServiceHost"]
+            ?? "localhost";
+
+        var configuredUrls = configuration.GetSection("Urls").Get<string[]>()?
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .ToArray() ?? Array.Empty<string>();
+
+        if (configuredUrls.Length > 0)
+        {
+            return new BindingConfiguration(configuredUrls, TryExtractPort(configuredUrls[0]), serviceHost);
+        }
+
+        var portPoolRaw = Environment.GetEnvironmentVariable("PORT_POOL") ?? configuration["PortPool"];
+        var portRaw = Environment.GetEnvironmentVariable("PORT") ?? configuration["Port"];
+
+        var spec = !string.IsNullOrWhiteSpace(portPoolRaw)
+            ? portPoolRaw!
+            : (!string.IsNullOrWhiteSpace(portRaw) ? portRaw! : "5085-5095");
+
+        var chosenPort = PortAllocator.ClaimPort(spec);
+        var urls = new[]
+        {
+            $"http://0.0.0.0:{chosenPort}",
+            $"http://localhost:{chosenPort}"
+        };
+
+        return new BindingConfiguration(urls, chosenPort, serviceHost);
+    }
+
+    private static int? TryExtractPort(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return uri.Port;
+        }
+
+        return null;
+    }
+}
+
+record BindingConfiguration(string[] Urls, int? SelectedPort, string AnnounceHost);
+
+static class PortAllocator
+{
+    public static int ClaimPort(string spec)
+    {
+        foreach (var candidate in ParseCandidates(spec))
+        {
+            if (candidate == 0)
+            {
+                return BindEphemeral();
+            }
+
+            if (TryBind(candidate, out var assignedPort))
+            {
+                return assignedPort;
+            }
+        }
+
+        throw new InvalidOperationException($"Nenhuma porta disponível no intervalo especificado ({spec}).");
+    }
+
+    private static IEnumerable<int> ParseCandidates(string spec)
+    {
+        foreach (var chunk in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (chunk.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return 0;
+                continue;
+            }
+
+            if (chunk.Contains('-'))
+            {
+                var parts = chunk.Split('-', 2, StringSplitOptions.TrimEntries);
+                if (parts.Length == 2
+                    && int.TryParse(parts[0], out var start)
+                    && int.TryParse(parts[1], out var end))
+                {
+                    if (start > end)
+                    {
+                        (start, end) = (end, start);
+                    }
+                    for (var value = start; value <= end; value++)
+                    {
+                        yield return value;
+                    }
+                }
+                continue;
+            }
+
+            if (int.TryParse(chunk, out var single))
+            {
+                yield return single;
+            }
+        }
+    }
+
+    private static bool TryBind(int port, out int assignedPort)
+    {
+        try
+        {
+            using var listener = new TcpListener(IPAddress.Any, port);
+            listener.Start();
+            assignedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+            return true;
+        }
+        catch (SocketException)
+        {
+            assignedPort = -1;
+            return false;
+        }
+    }
+
+    private static int BindEphemeral()
+    {
+        using var listener = new TcpListener(IPAddress.Any, 0);
+        listener.Start();
+        var assignedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        return assignedPort;
+    }
+}
