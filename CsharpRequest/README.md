@@ -1,6 +1,6 @@
 # Purchase Requests Service (.NET 8)
 
-Microsserviço REST desenvolvido em C#/.NET 8 que gerencia solicitações de compra, cataloga itens e integra-se ao Capitalia (serviço Python) para aprovações automáticas via JWT. Ele compõe a parte .NET do cenário de multi‑linguagens e pode ser executado em múltiplas instâncias simultaneamente para atender ao gateway/balanceador.
+Microsserviço REST desenvolvido em C#/.NET 8 que gerencia solicitações de compra, cataloga itens e integra-se ao Capitalia (serviço Python) para aprovações automáticas. A autenticação via gateway (JWT ou equivalente) será tratada posteriormente na camada AWS, portanto este serviço não adiciona headers ou valida tokens.
 
 ## Requisitos
 
@@ -13,10 +13,10 @@ Microsserviço REST desenvolvido em C#/.NET 8 que gerencia solicitações de com
 ```
 +-----------------------+         +---------------------------+
 | Purchase Requests API |  --->   | Capitalia Gateway (AWS)   |
-| (.NET / SQLite)       |         | (JWT + balanceamento)     |
+| (.NET / SQLite)       |         | (balanceamento e auth)    |
 +-----------+-----------+         +--------------+------------+
             ^                                     |
-            | HTTP + JWT                          |
+            | HTTP (gateway fará auth)            |
             |                                     v
         Consul (opcional)           +---------------------------+
         registra instâncias         | Capitalia Python Service  |
@@ -24,7 +24,7 @@ Microsserviço REST desenvolvido em C#/.NET 8 que gerencia solicitações de com
 ```
 
 - O serviço .NET expõe rotas REST e registra instâncias múltiplas (via `PORT_POOL`/Consul).
-- O gateway AWS recebe o tráfego público, valida JWT emitido pelo Capitalia Python e distribui entre instâncias vivas.
+- O gateway AWS recebe o tráfego público, executa autenticação própria (por exemplo, JWT) e distribui entre instâncias vivas.
 - A rota `/requests/{id}/external-approval` demonstra a integração bilateral.
 
 ## Execução local
@@ -64,7 +64,7 @@ docker run -d --name purchase-requests \
   purchase-requests
 ```
 
-Para várias instâncias, forneça `PORT` diferentes ou um `PORT_POOL` compartilhado e exponha as portas correspondentes (o gateway AWS fará o balanceamento/JWT conforme informado).
+Para várias instâncias, forneça `PORT` diferentes ou um `PORT_POOL` compartilhado e exponha as portas correspondentes (o gateway AWS fará o balanceamento/autenticação conforme informado).
 
 ## Configuração
 
@@ -89,13 +89,13 @@ Todos expostos em `/requests` (ou `/api/requests`) e documentados via Swagger em
 | GET `/requests/{id}` | Detalha uma solicitação. |
 | POST `/requests` | Cria nova solicitação com linhas e totais calculados. |
 | POST `/requests/{id}/confirm` | Confirma manualmente. |
-| POST `/requests/{id}/external-approval` | Envia ao Capitalia para aprovação automática via JWT. |
+| POST `/requests/{id}/external-approval` | Envia ao Capitalia para aprovação automática. |
 | POST `/requests/{id}/reject` | Rejeita manualmente. |
 
 ## Integração com Capitalia & Gateway
 
-- Configure `Capitalia:BaseAddress` com o endpoint exposto pelo gateway AWS (que valida o JWT emitido pelo serviço Python).
-- O serviço .NET apenas chama o gateway; a autenticação e balanceamento são tratados externamente.
+- Configure `Capitalia:BaseAddress` com o endpoint exposto pelo gateway AWS (que ficará responsável por autenticação e inspeções).
+- O serviço .NET apenas chama o gateway; autenticação/balanceamento são tratados externamente.
 - O endpoint `/requests/{id}/external-approval` demonstra a comunicação entre as duas linguagens, cumprindo a rubrica de integração.
 
 ### Evidências rápidas
