@@ -21,7 +21,7 @@ cd python_signature_manager
 cp .env.example .env
 # Edite o arquivo .env com suas configurações
 
-# 3. Execute a aplicação
+# 3. Execute a aplicação (sobe Capitalia, jwt-service e router)
 docker-compose up -d
 
 # 4. Verifique os logs
@@ -52,11 +52,14 @@ docker run -d \
   -e DB_KIND=sqlite \
   -e SQLITE_PATH=/app/data/capitalia.db \
   -e JWT_SECRET=your-secret-here \
+  -e JWT_SERVICE_URL=http://127.0.0.1:8200 \
   -e HOST=0.0.0.0 \
   -e PORT=8000-8100 \
   -e PORT_POOL=8000-8100 \
   -v $(pwd)/data:/app/data \
   python-signature-manager
+
+> Rode também o container `jwt-service` (próxima etapa) para que o fluxo de login funcione.
 
 # 4. Verificar logs
 docker logs signature-manager
@@ -65,7 +68,17 @@ docker logs signature-manager
 docker stop signature-manager
 docker rm signature-manager
 
-# 6. (Opcional) Construir e executar o roteador na porta 80
+# 6. Construir e executar o micro serviço de autenticação
+docker build -t jwt-service .
+docker run -d \
+  --name jwt-service \
+  --network host \
+  -e JWT_SECRET=your-secret-here \
+  -e JWT_SERVICE_HOST=0.0.0.0 \
+  -e JWT_SERVICE_PORT=8200 \
+  jwt-service python -m jwt_service.main
+
+# 7. (Opcional) Construir e executar o roteador na porta 80
 docker build -t capitalia-router ./router
 docker run -d \
   --name signature-router \
@@ -87,7 +100,11 @@ docker run -d \
 - `MYSQL_PASSWORD`: Senha do MySQL
 - `MYSQL_DB`: Nome do banco MySQL
 - `MYSQL_PORT`: Porta do MySQL
-- `JWT_SECRET`: Chave secreta para JWT
+- `JWT_SECRET`: Chave secreta para JWT (compartilhada entre Capitalia e jwt-service)
+- `JWT_SERVICE_URL`: URL base do micro serviço de autenticação consumido pelo Capitalia
+- `JWT_SERVICE_TIMEOUT`: Timeout em segundos para as chamadas do Capitalia ao serviço de autenticação
+- `JWT_SERVICE_HOST`: Interface/IP para bind do micro serviço de autenticação (quando executado em container dedicado)
+- `JWT_SERVICE_PORT`: Porta em que o micro serviço de autenticação escuta
 - `HOST`: Interface/IP para bind (padrão `0.0.0.0`)
 - `PORT`: Porta(s) preferenciais. O padrão é `8000-8100`, permitindo que várias instâncias coexistam automaticamente no host.
 - `PORT_POOL`: Mesmo formato de `PORT`, mas com prioridade quando definido. Use-o para refletir exatamente o range monitorado pelo router (sem incluir `auto`).

@@ -2,7 +2,7 @@
 
 Microsserviço de streaming construído 100% sobre a biblioteca padrão do Python (sem frameworks web). A solução completa inclui:
 
-- Serviço principal em `capitalia/` (HTTP puro + JWT manual + Ports & Adapters).
+- Serviço principal em `capitalia/` (HTTP puro + Ports & Adapters) que agora consome um emissor de JWT externo.
 - Router em `router/` para descoberta e balanceamento entre múltiplas instâncias.
 - Serviço .NET de solicitações de compra em `CsharpRequest/` (opcional).
 
@@ -54,11 +54,24 @@ Microsserviço de streaming construído 100% sobre a biblioteca padrão do Pytho
    python -m capitalia.scripts.init_sqlite
    python -m capitalia.scripts.seed_sqlite
    ```
-3. Rodar o serviço (porta padrão 8000, com fallback automático até 8100):
+3. Em um novo terminal, iniciar o micro serviço de autenticação JWT (explicado em [Serviço de Autenticação JWT](#serviço-de-autenticação-jwt)):
    ```bash
+   source .venv/bin/activate
+   export JWT_SECRET=troque-por-uma-chave-forte
+   export JWT_SERVICE_HOST=127.0.0.1
+   export JWT_SERVICE_PORT=8200
+   python -m jwt_service.main
+   ```
+   > O serviço imprime `[jwt-service] listening on ...` quando estiver pronto.
+
+4. Em outro terminal, rodar o serviço Capitalia (porta padrão 8000, com fallback automático até 8100):
+   ```bash
+   source .venv/bin/activate
+   export JWT_SECRET=troque-por-uma-chave-forte  # deve ser o mesmo utilizado no micro serviço
+   export JWT_SERVICE_URL=http://127.0.0.1:8200
    python -m capitalia.main
    ```
-4. Use os comandos `curl` da seção [Endpoints e Fluxos](#endpoints-e-fluxos) para validar o login e as rotas protegidas.
+5. Use os comandos `curl` da seção [Endpoints e Fluxos](#endpoints-e-fluxos) para validar o login e as rotas protegidas.
 
 ## Alternar para MySQL
 
@@ -90,7 +103,9 @@ Microsserviço de streaming construído 100% sobre a biblioteca padrão do Pytho
 | `DB_KIND` | `sqlite` ou `mysql` | `sqlite` |
 | `SQLITE_PATH` | Caminho do `.db` | `capitalia.db` |
 | `MYSQL_*` | Host, usuário, senha, banco, porta | vide `.env.example` |
-| `JWT_SECRET` | Segredo HS256 | obrigatório |
+| `JWT_SECRET` | Segredo HS256 compartilhado com o micro serviço | obrigatório |
+| `JWT_SERVICE_URL` | URL base do emissor de token externo | `http://127.0.0.1:8200` |
+| `JWT_SERVICE_TIMEOUT` | Timeout (s) para chamadas ao emissor externo | `5` |
 
 > `PORT`/`PORT_POOL` aceitam o token `auto` (porta 0) para cenários locais fora do roteador. Quando há router, mantenha ranges explícitos para coincidir com o que ele monitora.
 
@@ -156,6 +171,44 @@ docker compose up --build --scale app=4 router
 ```
 
 > Em macOS/Windows utilize WSL2 ou rode os processos diretamente fora de containers para simular o mesmo range de portas.
+
+## Serviço de Autenticação JWT
+
+O diretório `jwt_service/` contém um micro serviço independente responsável por assinar tokens HS256. Ele expõe dois endpoints:
+
+| Método | Rota | Descrição |
+| --- | --- | --- |
+| `GET` | `/health` | Retorna `{ "status": "ok" }` para verificação de saúde |
+| `POST` | `/token` | Recebe `{ "claims": { ... }, "ttl": 3600 }` e devolve `{ "token": "..." }` |
+
+### Executar localmente
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r capitalia/requirements.txt  # dependências compartilhadas
+
+export JWT_SECRET=troque-por-uma-chave-forte
+export JWT_SERVICE_HOST=127.0.0.1  # ou 0.0.0.0 para aceitar conexões externas
+export JWT_SERVICE_PORT=8200
+python -m jwt_service.main
+```
+
+Variáveis opcionais:
+
+| Variável | Função | Default |
+| --- | --- | --- |
+| `JWT_DEFAULT_TTL` | Tempo (s) padrão de expiração dos tokens | `3600` |
+
+Enquanto o serviço estiver ativo, o Capitalia solicitará tokens através de `JWT_SERVICE_URL`. Certifique-se de que `JWT_SECRET` seja idêntico nos dois processos.
+
+### Via Docker Compose
+
+```bash
+docker compose up jwt-service
+```
+
+O arquivo `docker-compose.yml` já inclui o serviço `jwt-service` com as mesmas variáveis de ambiente mostradas acima. Use `docker compose up` (sem filtros) para subir Capitalia, roteador e emissor JWT simultaneamente.
 
 ## Diagramas
 
