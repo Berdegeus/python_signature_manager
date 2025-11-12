@@ -6,8 +6,8 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Optional
 
-from .config import JwtServiceConfig
-from .tokens import sign
+from config import JwtServiceConfig
+from tokens import sign
 
 
 class JwtRequestHandler(BaseHTTPRequestHandler):

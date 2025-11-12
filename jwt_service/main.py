@@ -6,8 +6,8 @@ import signal
 import sys
 from typing import Iterator
 
-from .config import load_config
-from .server import create_server
+from config import load_config
+from server import create_server
 
 
 def _wait_for_interrupt() -> Iterator[None]:  # pragma: no cover - cli helper
@@ -30,6 +30,15 @@ def _wait_for_interrupt() -> Iterator[None]:  # pragma: no cover - cli helper
         signal.signal(signal.SIGTERM, old_sigterm)
 
 
+def _configure_logging() -> None:
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        )
+
+
 def main() -> None:
     _configure_logging()
     config = load_config()
@@ -49,12 +58,3 @@ if __name__ == "__main__":  # pragma: no cover - cli entry point
     except Exception as exc:  # noqa: BLE001
         print(f"[jwt-service] fatal error: {exc}", file=sys.stderr)
         sys.exit(1)
-
-
-def _configure_logging() -> None:
-    root_logger = logging.getLogger()
-    if not root_logger.handlers:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-        )
