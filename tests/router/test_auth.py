@@ -7,10 +7,10 @@ from typing import Any, Dict
 
 import pytest
 
-from capitalia.adapters.jwt_auth import sign
 from capitalia.app.auth_strategies import AuthStrategy, JwtAuthStrategy
 from capitalia.app.handlers import AbstractHandler, AuthHandler, forbidden
 from capitalia.app.http import HttpRequest, HttpResponse, RequestContext, Route
+from jwt_service.tokens import sign
 
 
 class DummyHandler(AbstractHandler):
@@ -99,7 +99,7 @@ def test_auth_handler_rejects_missing_bearer_token() -> None:
     response = handler.handle(ctx)
 
     assert response.status == HTTPStatus.UNAUTHORIZED
-    assert decode_error(response) == "missing bearer token"
+    assert decode_error(response) == "bearer token ausente"
     assert strategy.tokens == []
 
 

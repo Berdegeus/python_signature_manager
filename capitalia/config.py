@@ -32,6 +32,8 @@ class Config:
             'charset': 'utf8mb4',
         }
         self.jwt_secret: str = os.environ.get('JWT_SECRET', 'change-me')
+        self.jwt_service_url: str = os.environ.get('JWT_SERVICE_URL', 'http://127.0.0.1:8200')
+        self.jwt_service_timeout: float = float(os.environ.get('JWT_SERVICE_TIMEOUT', '5'))
         port_pool_raw = os.environ.get('PORT_POOL')
         raw_port = os.environ.get('PORT', '8000-8100')
         self.port_candidates: List[int] = self._parse_port_candidates(port_pool_raw or raw_port)

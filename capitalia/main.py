@@ -4,6 +4,7 @@ import errno
 from typing import Iterable
 
 from .config import Config
+from .adapters.jwt_client import JwtTokenClient
 from .adapters.uow import SqlUnitOfWork
 from .app.server import run_server
 from .app.handlers import build_handler
@@ -38,7 +39,8 @@ def main() -> None:
     def uow_factory():
         return SqlUnitOfWork(conn_factory, repo_factory)
 
-    handler = build_handler(uow_factory, cfg.jwt_secret, RealClock())
+    token_client = JwtTokenClient(cfg.jwt_service_url, timeout=cfg.jwt_service_timeout)
+    handler = build_handler(uow_factory, cfg.jwt_secret, RealClock(), token_client=token_client)
     _run_with_port_pool(handler, cfg.host, cfg.port_candidates)
 
 

@@ -4,10 +4,20 @@ import json
 from dataclasses import dataclass
 from datetime import date
 
-from capitalia.adapters.jwt_auth import sign as jwt_sign
 from capitalia.app.handlers import build_handler
 from capitalia.app.http import HttpRequest
 from capitalia.domain.models import User
+from jwt_service.tokens import sign as jwt_sign
+
+
+class FakeTokenClient:
+    def __init__(self, secret: str) -> None:
+        self.secret = secret
+        self.calls: list[dict[str, object]] = []
+
+    def issue_token(self, claims: dict[str, object], ttl_seconds: int = 3600) -> str:
+        self.calls.append({"claims": claims, "ttl": ttl_seconds})
+        return jwt_sign(claims, self.secret, ttl_seconds)
 
 
 @dataclass
@@ -63,7 +73,8 @@ def test_user_status_route_accepts_numeric_uid() -> None:
         return FakeUnitOfWork(user)
 
     secret = "secret"
-    processor = build_handler(uow_factory, secret, FakeClock())
+    token_client = FakeTokenClient(secret)
+    processor = build_handler(uow_factory, secret, FakeClock(), token_client=token_client)
 
     token = jwt_sign({"sub": user.id, "email": user.email, "plan": user.plan}, secret)
     request = HttpRequest(

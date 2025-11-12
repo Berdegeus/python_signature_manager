@@ -7,7 +7,7 @@ import time
 from http import HTTPStatus
 from typing import Any, Callable, Dict, Iterable, Optional
 
-from ..adapters.jwt_auth import sign as jwt_sign
+from ..adapters.jwt_client import JwtTokenClient, TokenIssueError
 from ..domain.errors import NotFoundError, ValidationError
 from ..domain.services import SubscriptionService
 from ..ports.clock import RealClock
@@ -239,8 +239,15 @@ class RequestProcessor:
         return response
 
 
-def build_handler(uow_factory, jwt_secret: str, clock=None):
+def build_handler(
+    uow_factory,
+    jwt_secret: str,
+    clock=None,
+    token_client: JwtTokenClient | None = None,
+):
     clock = clock or RealClock()
+    if token_client is None:
+        raise ValueError("token_client is required to issue JWTs")
 
     def read_json(request: HttpRequest) -> JsonDict:
         raw = request.body or b"{}"
@@ -272,7 +279,13 @@ def build_handler(uow_factory, jwt_secret: str, clock=None):
             password_hash = hashlib.sha256((user.salt + password).encode()).hexdigest()
             if password_hash != user.password_hash:
                 return unauthorized("credenciais inválidas")
-            token = jwt_sign({"sub": user.id, "email": user.email, "plan": user.plan}, jwt_secret, 3600)
+            try:
+                token = token_client.issue_token(
+                    {"sub": user.id, "email": user.email, "plan": user.plan},
+                    ttl_seconds=3600,
+                )
+            except TokenIssueError as exc:
+                return json_error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
         return make_json_response(HTTPStatus.OK, {"token": token})
 
     def handle_health(_: RequestContext) -> HttpResponse:

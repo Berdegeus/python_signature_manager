@@ -11,9 +11,18 @@ import pytest
 
 from capitalia.adapters.sqlite_repo import SqliteUserRepository
 from capitalia.adapters.uow import SqlUnitOfWork
-from capitalia.adapters.jwt_auth import verify as jwt_verify
 from capitalia.app.handlers import build_handler
 from capitalia.app.http import HttpRequest
+from capitalia.adapters.jwt_auth import verify as jwt_verify
+from jwt_service.tokens import sign as jwt_sign
+
+
+class StubTokenClient:
+    def __init__(self, secret: str) -> None:
+        self.secret = secret
+
+    def issue_token(self, claims: dict[str, object], ttl_seconds: int = 3600) -> str:
+        return jwt_sign(claims, self.secret, ttl_seconds)
 
 
 @dataclass
@@ -105,7 +114,13 @@ def _make_request(
 
 def test_full_flow_over_sqlite(sqlite_app: _SetupResult) -> None:
     secret = "integration-secret"
-    processor = build_handler(sqlite_app.uow_factory, secret, FixedClock(sqlite_app.clock_today))
+    token_client = StubTokenClient(secret)
+    processor = build_handler(
+        sqlite_app.uow_factory,
+        secret,
+        FixedClock(sqlite_app.clock_today),
+        token_client=token_client,
+    )
 
     login_body = json.dumps({"email": sqlite_app.email, "password": sqlite_app.password}).encode()
     login_request = _make_request(
