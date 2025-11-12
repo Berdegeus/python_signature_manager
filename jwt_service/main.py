@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import signal
 import sys
 from typing import Iterator
@@ -30,6 +31,7 @@ def _wait_for_interrupt() -> Iterator[None]:  # pragma: no cover - cli helper
 
 
 def main() -> None:
+    _configure_logging()
     config = load_config()
     server = create_server(config)
     print(f"[jwt-service] listening on {config.host}:{config.port}")
@@ -47,3 +49,12 @@ if __name__ == "__main__":  # pragma: no cover - cli entry point
     except Exception as exc:  # noqa: BLE001
         print(f"[jwt-service] fatal error: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+def _configure_logging() -> None:
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        )
