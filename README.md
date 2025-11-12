@@ -245,6 +245,13 @@ Server: valida assinatura/exp -> executa caso de uso
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
+## Checklist das Rubricas (deploy AWS)
+
+- **Rubrica 1 — rotas REST + Docker**: `services/capitalia/Dockerfile`, `CsharpRequest/Dockerfile` e `docker-compose.yml` sobem todos os microsserviços com health checks (`/health`). Para validar localmente execute `docker compose up --build` e use os `curl` de exemplo em cada README.
+- **Rubrica 2 — integração entre linguagens com JWT e balanceamento**: suba `jwt_service`, `capitalia`, `router` e múltiplas instâncias do `CsharpRequest` (via `PORT_POOL`). Chame `POST /requests/{id}/external-approval`; o serviço .NET busca um token no `jwt_service`, envia para o Capitalia (Python) via gateway/router e recebe a decisão.
+
+Esses mesmos passos são os que serão executados no ambiente AWS (gateway fornecido separadamente).
+
 Os testes de integração (`tests/test_http_flow_sqlite.py`, etc.) exercitam o handler completo, garantindo regressão mínima ao alterar regras ou mensagens.
 
 ### POST /user/{id}/upgrade
