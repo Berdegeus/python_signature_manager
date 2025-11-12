@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using PurchaseRequestsService.Models;
@@ -9,12 +10,18 @@ public class CapitaliaApprovalClient
 {
     private readonly HttpClient _httpClient;
     private readonly CapitaliaOptions _options;
+    private readonly JwtServiceClient _jwtServiceClient;
     private readonly ILogger<CapitaliaApprovalClient> _logger;
 
-    public CapitaliaApprovalClient(HttpClient httpClient, IOptions<CapitaliaOptions> options, ILogger<CapitaliaApprovalClient> logger)
+    public CapitaliaApprovalClient(
+        HttpClient httpClient,
+        IOptions<CapitaliaOptions> options,
+        JwtServiceClient jwtServiceClient,
+        ILogger<CapitaliaApprovalClient> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
+        _jwtServiceClient = jwtServiceClient;
         _logger = logger;
     }
 
@@ -33,6 +40,16 @@ public class CapitaliaApprovalClient
         {
             Content = JsonContent.Create(payload)
         };
+
+        var token = await _jwtServiceClient.TryIssueTokenAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+        else
+        {
+            _logger.LogWarning("JWT token not available; proceeding without Authorization header.");
+        }
 
         if (!string.IsNullOrWhiteSpace(_options.ApiKey))
         {

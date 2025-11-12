@@ -60,6 +60,17 @@ builder.Services.AddHttpClient<CapitaliaApprovalClient>((serviceProvider, client
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+builder.Services.Configure<JwtServiceOptions>(builder.Configuration.GetSection("JwtService"));
+builder.Services.AddHttpClient<JwtServiceClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<JwtServiceOptions>>().Value;
+    if (!string.IsNullOrWhiteSpace(options.BaseAddress))
+    {
+        client.BaseAddress = new Uri(options.BaseAddress, UriKind.Absolute);
+    }
+    client.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 1, 60));
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
