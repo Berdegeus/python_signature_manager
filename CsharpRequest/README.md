@@ -66,8 +66,16 @@ docker build -t purchase-requests .
 docker run -d --name purchase-requests \
   -e PORT=8080 \
   -e SERVICE_HOST=host.docker.internal \
+  -e JwtService__BaseAddress=http://host.docker.internal:8200 \
   -p 8080:8080 \
   purchase-requests
+```
+
+Ou utilize o `docker-compose.yml` recém-incluído (usa `network_mode: host` e health check embutido):
+
+```bash
+cd CsharpRequest
+docker compose up --build
 ```
 
 Para várias instâncias, forneça `PORT` diferentes ou um `PORT_POOL` compartilhado e exponha as portas correspondentes (o gateway/generic ingress fará o balanceamento e aceitará os tokens gerados via `jwt_service`).
