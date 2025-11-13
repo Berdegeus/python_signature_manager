@@ -17,7 +17,7 @@ services:
     volumes:
       - ./Data:/app/data
     ports:
-      - "58085:8080"
+      - "0:8080"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]

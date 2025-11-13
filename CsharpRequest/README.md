@@ -85,7 +85,7 @@ docker run -d --name purchase-requests \
   purchase-requests
 ```
 
-Ou utilize o `docker-compose.yml` recém-incluído (publica a porta interna 8080 em `58085` no host e inclui health check):
+Ou utilize o `docker-compose.yml` recém-incluído. A porta interna é sempre `8080`, mas o host recebe um número aleatório:
 
 ```bash
 cd CsharpRequest
@@ -96,15 +96,15 @@ docker compose logs -f purchase_requests
 docker compose down
 ```
 
-Veja a porta escolhida no log do container:
+Veja a porta escolhida no log e também pelo comando abaixo:
 
 ```bash
 docker compose logs -f purchase_requests | grep "Porta reservada"
-# Porta exposta no host (fixa em 58085)
-curl http://127.0.0.1:58085/health
+docker compose port purchase_requests 8080  # retorna algo como 0.0.0.0:49153
+curl http://127.0.0.1:<porta>/health
 ```
 
-Exemplo de saída: `Porta reservada para execução: 5089`. Use essa porta com os `curl` de teste.
+> **Portas**: localmente o serviço usa `PORT=auto`. No Docker, a porta interna é `8080`, mas o host recebe um número aleatório a cada `docker compose up`. Use `docker compose port` para descobrir qual porta está exposta.
 
 > **Portas**: localmente o serviço usa `PORT=auto` (dinâmico, exibido no log). No Docker, a porta interna fica fixa em `8080` e é publicada em `58085` no host (`http://127.0.0.1:58085`).
 
