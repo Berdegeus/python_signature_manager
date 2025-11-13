@@ -470,7 +470,7 @@ static class BindingResolver
 
         var spec = !string.IsNullOrWhiteSpace(portPoolRaw)
             ? portPoolRaw!
-            : (!string.IsNullOrWhiteSpace(portRaw) ? portRaw! : "auto");
+            : (!string.IsNullOrWhiteSpace(portRaw) ? portRaw! : "7000-7100");
 
         var reservation = PortAllocator.ReservePort(spec);
         var chosenPort = reservation.Port;

@@ -58,7 +58,7 @@ curl -s http://127.0.0.1:5087/requests
 ### Seleção dinâmica de portas
 
 - `PORT`: pode receber `auto` para deixar o SO escolher qualquer porta livre (default) ou um número fixo (ex.: `PORT=6000`).
-- `PORT_POOL`: **opcional**; só defina quando quiser limitar o range (formato `5085-5095`). Sem esse valor o serviço usa apenas `PORT`.
+- `PORT_POOL`: **opcional**; só defina quando quiser limitar o range (formato `5085-5095`). Sem esse valor o serviço usa apenas `PORT`. Por padrão, usamos `7000-7100` para integrar com o router.
 - `SERVICE_HOST`: hostname divulgado para o Consul/gateway (default `localhost`).
 
 Exemplo com pool (somente se realmente precisar de um range controlado):
@@ -104,7 +104,7 @@ docker compose port purchase_requests 8080  # retorna algo como 0.0.0.0:49153
 curl http://127.0.0.1:<porta>/health
 ```
 
-> **Portas**: localmente o serviço usa `PORT=auto`. No Docker, a porta interna é `8080`, mas o host recebe um número aleatório a cada `docker compose up`. Use `docker compose port` para descobrir qual porta está exposta.
+> **Portas**: localmente o serviço usa `PORT=auto` (pool 7000‑7100). No Docker, a porta interna é `8080`, mas o host recebe um número aleatório a cada `docker compose up`. Use `docker compose port` para descobrir qual porta está exposta.
 
 > **Portas**: localmente o serviço usa `PORT=auto` (dinâmico, exibido no log). No Docker, a porta interna fica fixa em `8080` e é publicada em `58085` no host (`http://127.0.0.1:58085`).
 

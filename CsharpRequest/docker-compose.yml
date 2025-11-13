@@ -8,7 +8,8 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/app.db
       - SERVICE_HOST=host.docker.internal
-      - PORT=8080
+      - PORT=auto
+      - PORT_POOL=7000-7100
       - JwtService__BaseAddress=http://host.docker.internal:8200
       - JwtService__ClientId=purchase-requests-service
       - JwtService__Audience=capitalia

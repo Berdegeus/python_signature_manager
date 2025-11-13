@@ -20,6 +20,17 @@ PORT_SPEC = (
     or "8000-8100"
 )
 
+CSHARP_HOST = os.environ.get("CSHARP_BACKEND_HOST", BACKEND_HOST)
+CSHARP_TIMEOUT = float(os.environ.get("CSHARP_BACKEND_TIMEOUT", str(BACKEND_TIMEOUT)))
+CSHARP_HEALTH_PATH = os.environ.get("CSHARP_BACKEND_HEALTH_PATH", HEALTH_PATH)
+CSHARP_PREFIX = os.environ.get("CSHARP_PREFIX", "/csharp")
+CSHARP_PORT_SPEC = (
+    os.environ.get("CSHARP_BACKEND_PORTS")
+    or os.environ.get("CSHARP_BACKEND_PORT_POOL")
+    or os.environ.get("CSHARP_BACKEND_PORT")
+    or "7000-7100"
+)
+
 
 def parse_port_candidates(raw: str) -> List[int]:
     ports: List[int] = []
@@ -126,6 +137,28 @@ def probe_backend(host: str, port: int, health_path: str, timeout: float) -> boo
 CANDIDATE_PORTS = parse_port_candidates(PORT_SPEC)
 POOL = BackendPool(BACKEND_HOST, CANDIDATE_PORTS, HEALTH_PATH, BACKEND_TIMEOUT, probe_backend)
 
+CSHARP_CANDIDATES = parse_port_candidates(CSHARP_PORT_SPEC) if CSHARP_PREFIX else []
+CSHARP_POOL = (
+    BackendPool(CSHARP_HOST, CSHARP_CANDIDATES, CSHARP_HEALTH_PATH, CSHARP_TIMEOUT, probe_backend)
+    if CSHARP_PREFIX and CSHARP_CANDIDATES
+    else None
+)
+
+ROUTING_RULES: list[tuple[str, BackendPool]] = []
+
+if CSHARP_POOL is not None:
+    rule_prefix = CSHARP_PREFIX.rstrip("/")
+    if not rule_prefix:
+        rule_prefix = "/csharp"
+    if rule_prefix != "/":
+        ROUTING_RULES.append((rule_prefix, CSHARP_POOL))
+
+ROUTING_RULES.append(("", POOL))
+
+POOLS_TO_MONITOR: list[tuple[str, BackendPool]] = [("default", POOL)]
+if CSHARP_POOL is not None:
+    POOLS_TO_MONITOR.append(("csharp", CSHARP_POOL))
+
 
 class Proxy(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
@@ -153,23 +186,32 @@ class Proxy(http.server.BaseHTTPRequestHandler):
         return
 
     def proxy(self, with_body: bool = False) -> None:
+        parsed_path = urllib.parse.urlsplit(self.path)
+        incoming_path = parsed_path.path or "/"
+        query = parsed_path.query
+        pool, outgoing_path = choose_route(incoming_path)
         tried: set[int] = set()
         while True:
-            port = POOL.next_backend()
+            port = pool.next_backend()
             if port is None or port in tried:
                 self._respond_unavailable()
                 return
 
             tried.add(port)
-            if self._forward_request(port, with_body):
+            if self._forward_request(pool, port, outgoing_path, query, with_body):
                 return
-            POOL.mark_unhealthy(port)
+            pool.mark_unhealthy(port)
 
-    def _forward_request(self, port: int, with_body: bool) -> bool:
-        parsed_path = urllib.parse.urlsplit(self.path)
-        path = parsed_path.path or "/"
-        qs = f"?{parsed_path.query}" if parsed_path.query else ""
-        target = f"http://{BACKEND_HOST}:{port}{path}{qs}"
+    def _forward_request(
+        self,
+        pool: BackendPool,
+        port: int,
+        path: str,
+        query: str,
+        with_body: bool,
+    ) -> bool:
+        qs = f"?{query}" if query else ""
+        target = f"http://{pool.host}:{port}{path}{qs}"
 
         headers = {
             k: v
@@ -224,15 +266,17 @@ class Proxy(http.server.BaseHTTPRequestHandler):
 def start_discovery_loop() -> None:
     def loop() -> None:
         while True:
-            try:
-                POOL.refresh()
-                healthy = POOL.snapshot()
-                print(f"[router] healthy backends: {[f'{BACKEND_HOST}:{p}' for p in healthy]}")
-            except Exception as exc:
-                print(f"[router] discovery error: {exc}")
+            for name, pool in POOLS_TO_MONITOR:
+                try:
+                    pool.refresh()
+                    healthy = pool.snapshot()
+                    print(f"[router] {name} healthy backends: {[f'{pool.host}:{p}' for p in healthy]}")
+                except Exception as exc:
+                    print(f"[router] discovery error ({name}): {exc}")
             time.sleep(max(1.0, DISCOVERY_INTERVAL))
 
-    POOL.refresh()
+    for _, pool in POOLS_TO_MONITOR:
+        pool.refresh()
     threading.Thread(target=loop, daemon=True).start()
 
 
@@ -244,7 +288,17 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 if __name__ == "__main__":
     start_discovery_loop()
     with ThreadingTCPServer(("0.0.0.0", ROUTER_PORT), Proxy) as httpd:
-        print(
-            f"[router] listening on :{ROUTER_PORT} (backends {BACKEND_HOST}:{', '.join(map(str, CANDIDATE_PORTS))})"
-        )
+        targets = [f"{name}:{pool.host}:{','.join(map(str, pool.candidates))}" for name, pool in POOLS_TO_MONITOR]
+        print(f"[router] listening on :{ROUTER_PORT} (targets {targets})")
         httpd.serve_forever()
+def choose_route(path: str) -> tuple[BackendPool, str]:
+    normalized = path or "/"
+    for prefix, pool in ROUTING_RULES:
+        if not prefix:
+            return pool, normalized
+        if normalized == prefix or normalized.startswith(prefix + "/"):
+            stripped = normalized[len(prefix) :] or "/"
+            if not stripped.startswith("/"):
+                stripped = "/" + stripped
+            return pool, stripped
+    return POOL, normalized
