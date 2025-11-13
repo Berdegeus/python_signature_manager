@@ -72,6 +72,16 @@ builder.Services.AddHttpClient<JwtServiceClient>((serviceProvider, client) =>
 });
 
 var app = builder.Build();
+binding.Reservation?.Dispose();
+
+if (binding.SelectedPort.HasValue)
+{
+    app.Logger.LogInformation("Porta reservada para execução: {Port}", binding.SelectedPort.Value);
+}
+else
+{
+    app.Logger.LogInformation("Utilizando URLs configuradas explicitamente: {Urls}", string.Join(", ", binding.Urls));
+}
 
 using (var scope = app.Services.CreateScope())
 {
@@ -452,7 +462,7 @@ static class BindingResolver
 
         if (configuredUrls.Length > 0)
         {
-            return new BindingConfiguration(configuredUrls, TryExtractPort(configuredUrls[0]), serviceHost);
+            return new BindingConfiguration(configuredUrls, TryExtractPort(configuredUrls[0]), serviceHost, null);
         }
 
         var portPoolRaw = Environment.GetEnvironmentVariable("PORT_POOL") ?? configuration["PortPool"];
@@ -460,16 +470,16 @@ static class BindingResolver
 
         var spec = !string.IsNullOrWhiteSpace(portPoolRaw)
             ? portPoolRaw!
-            : (!string.IsNullOrWhiteSpace(portRaw) ? portRaw! : "5085-5095");
+            : (!string.IsNullOrWhiteSpace(portRaw) ? portRaw! : "auto");
 
-        var chosenPort = PortAllocator.ClaimPort(spec);
+        var reservation = PortAllocator.ReservePort(spec);
+        var chosenPort = reservation.Port;
         var urls = new[]
         {
-            $"http://0.0.0.0:{chosenPort}",
-            $"http://localhost:{chosenPort}"
+            $"http://0.0.0.0:{chosenPort}"
         };
 
-        return new BindingConfiguration(urls, chosenPort, serviceHost);
+        return new BindingConfiguration(urls, chosenPort, serviceHost, reservation);
     }
 
     private static int? TryExtractPort(string? url)
@@ -488,11 +498,11 @@ static class BindingResolver
     }
 }
 
-record BindingConfiguration(string[] Urls, int? SelectedPort, string AnnounceHost);
+record BindingConfiguration(string[] Urls, int? SelectedPort, string AnnounceHost, IDisposable? Reservation);
 
 static class PortAllocator
 {
-    public static int ClaimPort(string spec)
+    public static PortReservation ReservePort(string spec)
     {
         foreach (var candidate in ParseCandidates(spec))
         {
@@ -501,9 +511,9 @@ static class PortAllocator
                 return BindEphemeral();
             }
 
-            if (TryBind(candidate, out var assignedPort))
+            if (TryBind(candidate, out var reservation))
             {
-                return assignedPort;
+                return reservation;
             }
         }
 
@@ -546,27 +556,46 @@ static class PortAllocator
         }
     }
 
-    private static bool TryBind(int port, out int assignedPort)
+    private static bool TryBind(int port, out PortReservation reservation)
     {
         try
         {
-            using var listener = new TcpListener(IPAddress.Any, port);
+            var listener = new TcpListener(IPAddress.Any, port);
             listener.Start();
-            assignedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var assignedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+            reservation = new PortReservation(listener, assignedPort);
             return true;
         }
         catch (SocketException)
         {
-            assignedPort = -1;
+            reservation = null!;
             return false;
         }
     }
 
-    private static int BindEphemeral()
+    private static PortReservation BindEphemeral()
     {
-        using var listener = new TcpListener(IPAddress.Any, 0);
+        var listener = new TcpListener(IPAddress.Any, 0);
         listener.Start();
         var assignedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
-        return assignedPort;
+        return new PortReservation(listener, assignedPort);
+    }
+
+    public sealed class PortReservation : IDisposable
+    {
+        private TcpListener? _listener;
+        public int Port { get; }
+
+        public PortReservation(TcpListener listener, int port)
+        {
+            _listener = listener;
+            Port = port;
+        }
+
+        public void Dispose()
+        {
+            _listener?.Stop();
+            _listener = null;
+        }
     }
 }

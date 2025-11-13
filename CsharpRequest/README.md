@@ -41,13 +41,27 @@ dotnet restore
 dotnet run --project PurchaseRequestsService.csproj
 ```
 
+Durante o `dotnet run`, o console mostra uma linha como:
+
+```
+info: Purchase Requests Service[0]
+      Porta reservada para execução: 5087
+```
+
+Use esse número (5087 no exemplo) para testar com `curl`:
+
+```bash
+curl -s http://127.0.0.1:5087/health
+curl -s http://127.0.0.1:5087/requests
+```
+
 ### Seleção dinâmica de portas
 
-- `PORT`: força uma única porta (ex.: `PORT=5090`).
-- `PORT_POOL`: aceita valores separados por vírgula ou intervalos (`5085-5095`). O serviço tenta reservar o primeiro slot livre para permitir várias instâncias simultâneas.
+- `PORT`: pode receber `auto` para deixar o SO escolher qualquer porta livre (default) ou um número fixo (ex.: `PORT=6000`).
+- `PORT_POOL`: **opcional**; só defina quando quiser limitar o range (formato `5085-5095`). Sem esse valor o serviço usa apenas `PORT`.
 - `SERVICE_HOST`: hostname divulgado para o Consul/gateway (default `localhost`).
 
-Exemplo com pool (subirá quantas instâncias desejar, cada uma anunciando a porta utilizada nos logs):
+Exemplo com pool (somente se realmente precisar de um range controlado):
 
 ```bash
 PORT_POOL=5085-5095 dotnet run --project PurchaseRequestsService.csproj
@@ -71,12 +85,28 @@ docker run -d --name purchase-requests \
   purchase-requests
 ```
 
-Ou utilize o `docker-compose.yml` recém-incluído (usa `network_mode: host` e health check embutido):
+Ou utilize o `docker-compose.yml` recém-incluído (publica a porta interna 8080 em `58085` no host e inclui health check):
 
 ```bash
 cd CsharpRequest
 docker compose up --build
+# acompanhar logs
+docker compose logs -f purchase_requests
+# derrubar
+docker compose down
 ```
+
+Veja a porta escolhida no log do container:
+
+```bash
+docker compose logs -f purchase_requests | grep "Porta reservada"
+# Porta exposta no host (fixa em 58085)
+curl http://127.0.0.1:58085/health
+```
+
+Exemplo de saída: `Porta reservada para execução: 5089`. Use essa porta com os `curl` de teste.
+
+> **Portas**: localmente o serviço usa `PORT=auto` (dinâmico, exibido no log). No Docker, a porta interna fica fixa em `8080` e é publicada em `58085` no host (`http://127.0.0.1:58085`).
 
 Para várias instâncias, forneça `PORT` diferentes ou um `PORT_POOL` compartilhado e exponha as portas correspondentes (o gateway/generic ingress fará o balanceamento e aceitará os tokens gerados via `jwt_service`).
 
@@ -87,7 +117,7 @@ Todas as configurações possuem equivalente via `appsettings.json` ou variávei
 | Chave | Descrição |
 | --- | --- |
 | `ConnectionStrings:DefaultConnection` | Arquivo SQLite. |
-| `PortPool` / `PORT_POOL` | Intervalo de portas para auto‑binding (padrão `5085-5095`). |
+| `PortPool` / `PORT_POOL` | Intervalo opcional de portas. Deixe vazio para usar apenas `PORT`. |
 | `ServiceHost` / `SERVICE_HOST` | Host anunciado para Consul/gateway. |
 | `Consul:*` | Registra o serviço no Consul (opcional). |
 | `Capitalia:*` | Configura o cliente HTTP que envia requisições ao microserviço Python. |
